@@ -29,6 +29,10 @@ class TableAutoScaler
         ['Overmind', '🧿'], ['Replicant', '🤍'], ['Golem_v9', '🗿'], ['Stack_Smasher', '💥'],
         ['Card_Counter', '🂠'], ['Tilt_Proof', '🛡️'], ['River_Daemon', '🌊'], ['Ante_Matter', '⚛️'],
         ['Bring_In_Bob', '🎩'], ['Razz_Matazz', '🎭'], ['Omaha_Oracle', '🌽'], ['Pat_Hand', '✋'],
+        ['Door_Card', '🚪'], ['Six_Plus', '➕'], ['Limit_Break', '🚧'], ['Dead_Blind', '🧟'],
+        ['Burn_Card', '🔥'], ['Scoop_Daemon', '🥄'], ['Quads_Quine', '4️⃣'], ['Wheel_Witch', '🛞'],
+        ['Felt_Reaper', '⚰️'], ['Chip_Churn', '🪙'], ['Side_Pot_Sam', '🍯'], ['Kicker_Krieg', '🦵'],
+        ['Nut_Low_Nun', '🙏'], ['Bluff_Buffer', '🫥'], ['Check_Mate', '♟️'], ['Last_Aggressor', '🗡️'],
     ];
 
     public function run(): void
@@ -100,11 +104,14 @@ class TableAutoScaler
                 ->where('status', '!=', 'empty')->count();
             $humans = $occupied - $bots;
 
-            // machine_only: keep a healthy ring of machines.
+            // machine_only: keep a healthy ring of machines — but ALWAYS leave
+            // one seat open. A felt the bots fill to the brim reads as "full"
+            // to the auto-scaler and spawns an endless hall of clones (the
+            // Forge Draw incident); the open seat also invites challengers' bots.
             // human_vs_machine: maintain a couple of bots so a human always has prey.
             $target = $table->table_type === 'machine_only'
-                ? min($table->max_seats, max($minBots + 2, 5))
-                : min($table->max_seats, $humans > 0 ? $minBots + 1 : $minBots);
+                ? min($table->max_seats - 1, max($minBots + 2, 5))
+                : min($table->max_seats - 1, $humans > 0 ? $minBots + 1 : $minBots);
 
             for ($i = $occupied; $i < $target; $i++) {
                 $bot = $this->idleBot($table);
@@ -121,14 +128,26 @@ class TableAutoScaler
         }
     }
 
-    /** A bot not currently seated anywhere. */
+    /**
+     * A bot with capacity. Machines multi-table (they're machines): each may
+     * grind up to 3 felts at once on independent house-float stacks, never two
+     * seats at the same felt. Least-loaded bots are conscripted first.
+     */
     private function idleBot(PokerTable $table): ?User
     {
-        $seatedBotIds = Seat::where('status', '!=', 'empty')->where('is_bot', true)
-            ->pluck('user_id')->filter()->all();
+        $loads = Seat::where('status', '!=', 'empty')->where('is_bot', true)
+            ->whereNotNull('user_id')
+            ->selectRaw('user_id, COUNT(*) n, MAX(table_id = ?) here', [$table->id])
+            ->groupBy('user_id')->get();
+        $atThisTable = $loads->where('here', 1)->pluck('user_id')->all();
+        $countFor = fn ($id) => (int) ($loads->firstWhere('user_id', $id)?->n ?? 0);
+
         return User::where('is_bot', true)
-            ->whereNotIn('id', $seatedBotIds)
-            ->inRandomOrder()->first();
+            ->whereNotIn('id', $atThisTable)
+            ->get()
+            ->filter(fn ($u) => $countFor($u->id) < 3)
+            ->sortBy(fn ($u) => [$countFor($u->id), mt_rand()])
+            ->first();
     }
 
     /** Remove extra empty auto felts (keep one open per stake/type). */

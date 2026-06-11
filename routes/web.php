@@ -24,6 +24,9 @@ Route::get('/wallet', $spa);
 Route::get('/admin', $spa);
 Route::get('/tables/{table}', $spa)->whereNumber('table');
 Route::get('/observe/{table}', $spa)->whereNumber('table');
+Route::get('/replay/{hand}', $spa)->whereNumber('hand');
+Route::get('/players', $spa);
+Route::get('/player/{username}', $spa);
 
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
@@ -44,6 +47,9 @@ Route::prefix('api')->group(function () {
     Route::get('/lobby', [PlayController::class, 'lobby']);
     Route::get('/tables/{table}/state', [PlayController::class, 'tableState']);
     Route::get('/tables/{table}/observe', [PlayController::class, 'observe']);
+    Route::get('/hands/{hand}', [PlayController::class, 'hand']);
+    Route::get('/players', [PlayController::class, 'players']);
+    Route::get('/players/{username}', [PlayController::class, 'playerStats']);
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
 });
 

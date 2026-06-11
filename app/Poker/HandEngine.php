@@ -147,6 +147,8 @@ final class HandEngine
                 $p['all_in'] = true;
             }
             unset($p);
+            // Logged so replays and player-stat ledgers see every chip in.
+            $this->log($sn, 'ante', $pay);
         }
 
         // Two down, one up — dealt one at a time, casino style.
@@ -969,7 +971,33 @@ final class HandEngine
                 $pots[] = ['amount' => $amount, 'eligible' => array_values($eligible)];
             }
         }
-        return $pots;
+
+        // A layer can end up with no live claimant — e.g. a blind poster folds
+        // after committing more than any surviving all-in stack. That's dead
+        // money: fold it into the nearest contested pot below (casino practice),
+        // else the one above, so no chip ever evaporates.
+        foreach ($pots as $i => $pot) {
+            if (!empty($pot['eligible']) || $pot['amount'] === 0) {
+                continue;
+            }
+            for ($j = $i - 1; $j >= 0; $j--) {
+                if (!empty($pots[$j]['eligible'])) {
+                    $pots[$j]['amount'] += $pot['amount'];
+                    $pots[$i]['amount'] = 0;
+                    break;
+                }
+            }
+            if ($pots[$i]['amount'] > 0) {
+                for ($j = $i + 1; $j < count($pots); $j++) {
+                    if (!empty($pots[$j]['eligible'])) {
+                        $pots[$j]['amount'] += $pot['amount'];
+                        $pots[$i]['amount'] = 0;
+                        break;
+                    }
+                }
+            }
+        }
+        return array_values(array_filter($pots, fn ($p) => $p['amount'] > 0));
     }
 
     private function seatDistanceFromButton(int $seat): int

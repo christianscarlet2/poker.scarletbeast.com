@@ -28,10 +28,14 @@ class PlayController extends Controller
         $rows = $tables->map(function (PokerTable $t) {
             $seated = Seat::where('table_id', $t->id)->where('status', '!=', 'empty')->get();
             $players = $seated->count();
+            $game = $t->game_type ?? 'nlhe';
             return [
                 'id' => $t->id,
                 'name' => $t->name,
                 'type' => $t->table_type,
+                'game' => $game,
+                'game_name' => \App\Poker\GameType::get($game)['name'],
+                'game_short' => \App\Poker\GameType::get($game)['short'],
                 'stake' => $t->stake?->name,
                 'sb' => $t->small_blind,
                 'bb' => $t->big_blind,
@@ -119,7 +123,46 @@ class PlayController extends Controller
     {
         $hands = Hand::where('table_id', $table->id)
             ->latest('id')->limit(25)
-            ->get(['id', 'hand_no', 'board', 'winners', 'pot', 'ended_at']);
+            ->get(['id', 'hand_no', 'game_type', 'board', 'winners', 'pot', 'ended_at']);
         return response()->json(['hands' => $hands]);
+    }
+
+    /** Sharkscope-style leaderboard: every player ranked by lifetime profit. */
+    public function players(Request $request, \App\Services\PlayerStats $stats)
+    {
+        return response()->json(['players' => $stats->leaderboard()]);
+    }
+
+    /** One player's full statistical dossier. */
+    public function playerStats(Request $request, string $username, \App\Services\PlayerStats $stats)
+    {
+        $user = \App\Models\User::where('username', $username)->first();
+        if (!$user) {
+            return response()->json(['error' => 'No such soul in the ledger.'], 404);
+        }
+        return response()->json(['stats' => $stats->forUser($user)]);
+    }
+
+    /** Full archived record of one hand — feeds the step-through replay. */
+    public function hand(Request $request, Hand $hand)
+    {
+        return response()->json([
+            'hand' => [
+                'id' => $hand->id,
+                'table_id' => $hand->table_id,
+                'table_name' => $hand->table?->name,
+                'hand_no' => $hand->hand_no,
+                'game_type' => $hand->game_type ?? 'nlhe',
+                'game_name' => \App\Poker\GameType::get($hand->game_type ?? 'nlhe')['name'],
+                'seats' => $hand->seats,
+                'board' => $hand->board,
+                'hole_cards' => $hand->hole_cards, // showdown-revealed only
+                'actions' => $hand->actions,
+                'winners' => $hand->winners,
+                'pot' => $hand->pot,
+                'rake' => $hand->rake,
+                'ended_at' => $hand->ended_at?->toIso8601String(),
+            ],
+        ]);
     }
 }

@@ -12,8 +12,10 @@
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-STPXJY5KPF');</script>
 </head>
 <body>
-    @include('partials.chrome')
+    @php $bare = request()->query('w') === 'table'; @endphp
+    @include('partials.chrome', ['bare' => $bare])
 
+    @unless ($bare)
     {{-- Marquee BELOW the header --}}
     @php
         $mq_top = [
@@ -32,9 +34,11 @@
         ];
     @endphp
     {!! pk_marquee($mq_top, 'hot', '58') !!}
+    @endunless
 
     <div id="poker-root"></div>
 
+    @unless ($bare)
     {{-- Marquee ABOVE the footer --}}
     @php
         $mq_bottom = [
@@ -55,6 +59,7 @@
     {!! pk_marquee($mq_bottom, 'gold', '52', true) !!}
 
     @if (function_exists('sb_chrome_footer')) {!! sb_chrome_footer() !!} @endif
+    @endunless
 
     <script src="/js/marquee-engine.js" defer></script>
 </body>

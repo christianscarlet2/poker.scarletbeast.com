@@ -23,6 +23,7 @@ class AdminController extends Controller
         return response()->json([
             'settings' => Setting::all_settings(),
             'stakes' => Stake::orderBy('sort')->get(),
+            'game_types' => \App\Poker\GameType::names(),
             'stats' => [
                 'players' => User::where('is_bot', false)->count(),
                 'bots' => User::where('is_bot', true)->count(),
@@ -71,6 +72,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'id' => ['nullable', 'integer'],
             'name' => ['required', 'string', 'max:32'],
+            'game_type' => ['nullable', 'string', 'in:' . implode(',', \App\Poker\GameType::ids())],
             'small_blind' => ['required', 'integer', 'min:1'],
             'big_blind' => ['required', 'integer', 'min:2'],
             'min_buy_in' => ['required', 'integer', 'min:1'],
@@ -79,6 +81,9 @@ class AdminController extends Controller
             'sort' => ['nullable', 'integer'],
             'enabled' => ['boolean'],
         ]);
+        $data['game_type'] = $data['game_type'] ?? 'nlhe';
+        // The variant's deck math caps the ring (7 for stud, 5 for draw).
+        $data['max_seats'] = min($data['max_seats'], \App\Poker\GameType::maxSeats($data['game_type']));
         $stake = Stake::updateOrCreate(['id' => $data['id'] ?? null], $data);
         return response()->json(['ok' => true, 'stake' => $stake]);
     }

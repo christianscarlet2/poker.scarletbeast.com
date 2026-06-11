@@ -6,6 +6,29 @@ import Marquee, { PHRASES } from './Marquee.jsx';
 import { Card, Board } from './cards.jsx';
 import { UnitProvider, useUnit, Money, usd, dollars } from './money.jsx';
 
+/* ----------------------------------------------------- app / window context */
+// "Bare" = a standalone table window: just the felt, no shared chrome.
+const BARE = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('w') === 'table';
+// Desktop (Electron) injects this in preload; mobile (RN WebView) injects scarletbeastApp.
+const DESKTOP = typeof window !== 'undefined' && !!(window.scarletbeastDesktop && window.scarletbeastDesktop.isDesktop);
+const INAPP = DESKTOP || (typeof window !== 'undefined' && !!window.scarletbeastApp);
+
+function tablePath(id, observe = false) { return `${observe ? '/observe' : '/tables'}/${id}`; }
+
+// How a table opens depends on where we are: desktop pops a new OS window, mobile
+// swaps to a full-screen bare view, a plain browser keeps in-page SPA nav.
+function openTable(go, path) {
+  if (DESKTOP) { window.open(path + '?w=table', '_blank', 'noopener'); return; }
+  if (INAPP) { window.location.assign(path + '?w=table'); return; }
+  go(path);
+}
+// Leaving a bare table window: close it on desktop, return to the lobby elsewhere.
+function exitBare() {
+  if (DESKTOP) { window.close(); return; }
+  window.location.assign('/');
+}
+
 /* ------------------------------------------------------------------ router */
 const Nav = createContext({ path: '/', go: () => {} });
 function useNav() { return useContext(Nav); }
@@ -31,6 +54,13 @@ function A({ href, children, ...rest }) {
   return <a href={href} onClick={(e) => { e.preventDefault(); go(href); }} {...rest}>{children}</a>;
 }
 
+// A link that opens a table — in a new bare window inside the apps, in-page on the web.
+function TableLink({ id, observe = false, children, ...rest }) {
+  const { go } = useNav();
+  const path = tablePath(id, observe);
+  return <a href={path} onClick={(e) => { e.preventDefault(); openTable(go, path); }} {...rest}>{children}</a>;
+}
+
 /* -------------------------------------------------------------- session ctx */
 const Me = createContext(null);
 function useMe() { return useContext(Me); }
@@ -45,6 +75,7 @@ function AppBar() {
     <div className="wrap toprow">
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
         <A href="/" className="badge hvm">♠ LOBBY</A>
+        <A href="/players" className="badge gold">SHARKS</A>
         <a href="/api-docs" className="badge">API</a>
         <a href="/download" className="badge">GET APP</a>
         {me && <A href="/wallet" className="badge ho">VAULT</A>}
@@ -145,12 +176,12 @@ function HeroLive({ heroId }) {
     <div className="hero">
       <div className="wrap hero-grid">
         <div>
-          <div className="kick">No-Limit Texas Hold'em · Man vs Machine</div>
+          <div className="kick">{state?.table?.game_name || "No-Limit Texas Hold'em"} · Man vs Machine</div>
           <h1>The felt where <b>flesh</b> bleeds <b>silicon</b>.</h1>
           <p className="sub">Real chips. Real crypto. Real bots. Sit down against opponents that never tilt and never sleep — or watch the machines devour each other. This is the last honest war.</p>
           <div style={{ display: 'flex', gap: 12, marginTop: 22, flexWrap: 'wrap' }}>
             <A href="/register" className="btn big">Claim a Seat</A>
-            {heroId && <A href={`/observe/${heroId}`} className="btn ghost big">Observe the Carnage</A>}
+            {heroId && <TableLink id={heroId} observe className="btn ghost big">Observe the Carnage</TableLink>}
             <a href="/download" className="btn ghost big">↓ Get the Apps</a>
           </div>
         </div>
@@ -175,14 +206,17 @@ function TableCard({ t }) {
     <div className="tcard">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="nm">{t.name}</div>
-        <span className={`badge ${typeBadge}`}>{t.type.replace(/_/g, ' ')}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {t.game_short && <span className="badge gold" title={t.game_name}>{t.game_short}</span>}
+          <span className={`badge ${typeBadge}`}>{t.type.replace(/_/g, ' ')}</span>
+        </div>
       </div>
       <div className="meta"><span>Blinds {usd(t.sb)}/{usd(t.bb)}</span><span>{t.players}/{t.max_seats} seated</span></div>
       <div className="seatbar">{dots}</div>
       <div className="meta"><span>Buy-in {usd(t.min_buy_in)}–{usd(t.max_buy_in)}</span><span>Ⓗ{t.humans} ⚙{t.bots}</span></div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <A href={`/tables/${t.id}`} className="btn" style={{ flex: 1, textAlign: 'center' }}>Sit Down</A>
-        <A href={`/observe/${t.id}`} className="btn ghost">Watch</A>
+        <TableLink id={t.id} className="btn" style={{ flex: 1, textAlign: 'center' }}>Sit Down</TableLink>
+        <TableLink id={t.id} observe className="btn ghost">Watch</TableLink>
       </div>
     </div>
   );
@@ -238,7 +272,7 @@ function TablePage({ id }) {
   return (
     <div className="wrap felt-wrap">
       <div className="toprow">
-        <div><A href="/" className="badge">← LOBBY</A> <strong style={{ marginLeft: 10 }}>{t.name}</strong> <span className="mono" style={{ color: 'var(--pk-dim)' }}> · {usd(t.sb)}/{usd(t.bb)} · {t.type.replace(/_/g, ' ')}</span></div>
+        <div>{BARE ? <button className="badge" onClick={exitBare}>{DESKTOP ? '✕ CLOSE' : '← LOBBY'}</button> : <A href="/" className="badge">← LOBBY</A>} <strong style={{ marginLeft: 10 }}>{t.name}</strong> <span className="mono" style={{ color: 'var(--pk-dim)' }}> · {t.game_name ? `${t.game_name} · ` : ''}{usd(t.sb)}/{usd(t.bb)} · {t.type.replace(/_/g, ' ')}</span></div>
         <div>{me ? <span className="chips-pill">{usd(me.chips)}</span> : <A href="/login" className="btn ghost">Enter to play</A>}</div>
       </div>
 
@@ -283,25 +317,322 @@ function Observe({ id }) {
   }, [id]);
 
   if (!state) return <div className="wrap"><div className="center-msg">Pulling up a chair to watch…</div></div>;
+  const t = state.table;
+  const seatName = (s) => state.hand?.players?.[s]?.name || `Seat ${s}`;
+  const feed = (state.hand?.actions || []).slice(-12).reverse();
+
   return (
     <div className="wrap felt-wrap">
       <div className="toprow">
-        <div><A href="/" className="badge">← LOBBY</A> <strong style={{ marginLeft: 10 }}>OBSERVING · {state.table.name}</strong></div>
-        <A href={`/tables/${id}`} className="btn ghost">Sit Down</A>
+        <div>
+          {BARE ? <button className="badge" onClick={exitBare}>{DESKTOP ? '✕ CLOSE' : '← LOBBY'}</button> : <A href="/" className="badge">← LOBBY</A>}{' '}
+          <strong style={{ marginLeft: 10 }}>OBSERVING · {t.name}</strong>
+          <span className="mono" style={{ color: 'var(--pk-dim)', marginLeft: 8 }}>
+            {t.game_name || ''} · {usd(t.sb)}/{usd(t.bb)}
+          </span>
+        </div>
+        <TableLink id={id} className="btn ghost">Sit Down</TableLink>
       </div>
       <Felt state={state} observer />
       <Marquee items={PHRASES.machine} cls="hot flush" speed={48} />
+
+      <div className="row">
+        <div className="panel">
+          <h2>Live Action</h2>
+          {feed.length === 0 ? <div className="hint">The dealer is shuffling…</div> : (
+            <table className="tbl">
+              <tbody>
+                {feed.map((a, i) => (
+                  <tr key={i}>
+                    <td className="mono" style={{ color: 'var(--pk-dim)' }}>{a.street}</td>
+                    <td>{seatName(a.seat)}</td>
+                    <td>
+                      {a.action === 'draw'
+                        ? (a.amount === 0 ? 'stands pat' : `draws ${a.amount}`)
+                        : <>{a.action.replace(/_/g, ' ')}{a.amount > 0 ? ` ${usd(a.amount)}` : ''}</>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="panel">
+          <h2>Recent Hands</h2>
+          <table className="tbl">
+            <thead><tr><th>#</th><th>Board</th><th>Pot</th><th>Winner</th><th></th></tr></thead>
+            <tbody>
+              {hands.map(h => (
+                <tr key={h.id}>
+                  <td>{h.hand_no}</td>
+                  <td>{(h.board || []).join(' ') || '—'}</td>
+                  <td>{usd(h.pot)}</td>
+                  <td>{(h.winners || []).map(w => `#${w.seat} +${usd(w.amount)}${w.pot_kind ? ` (${w.pot_kind})` : ''}`).join(', ')}</td>
+                  <td><A href={`/replay/${h.id}`} className="badge">▶ replay</A></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- replay */
+function Replay({ id }) {
+  const [hand, setHand] = useState(null);
+  const [step, setStep] = useState(0);     // actions revealed so far
+  const [playing, setPlaying] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.get(`/api/hands/${id}`).then(d => { setHand(d.hand); setStep(0); }).catch(e => setErr(e.message));
+  }, [id]);
+
+  useEffect(() => {
+    if (!playing || !hand) return;
+    const iv = setInterval(() => {
+      setStep(s => {
+        if (s >= (hand.actions || []).length) { setPlaying(false); return s; }
+        return s + 1;
+      });
+    }, 700);
+    return () => clearInterval(iv);
+  }, [playing, hand]);
+
+  if (err) return <div className="wrap"><div className="center-msg">{err}</div></div>;
+  if (!hand) return <div className="wrap"><div className="center-msg">Exhuming the hand…</div></div>;
+
+  const actions = hand.actions || [];
+  const done = step >= actions.length;
+  const visible = actions.slice(0, step);
+
+  // Board reveal follows the furthest street the visible actions have reached.
+  const streetRank = { preflop: 0, flop: 1, turn: 2, river: 3 };
+  const boardCount = { 0: 0, 1: 3, 2: 4, 3: 5 };
+  const reached = visible.reduce((m, a) => Math.max(m, streetRank[a.street] ?? 0), 0);
+  const noBoard = ['stud', 'razz', 'draw5'].includes(hand.game_type);
+  const board = noBoard ? [] : (hand.board || []).slice(0, done ? 5 : (boardCount[reached] ?? 0));
+
+  // Pot reconstructed from the visible actions (draw logs cards, not chips).
+  const pot = visible.reduce((sum, a) => sum + (a.action === 'draw' ? 0 : (a.amount || 0)), 0);
+  const folded = new Set(visible.filter(a => a.action === 'fold').map(a => a.seat));
+  const seats = Object.values(hand.seats || {});
+  const seatName = (s) => (hand.seats?.[s]?.name) || `Seat ${s}`;
+
+  return (
+    <div className="wrap felt-wrap">
+      <div className="toprow">
+        <div>
+          <A href={`/observe/${hand.table_id}`} className="badge">← {hand.table_name || 'TABLE'}</A>{' '}
+          <strong style={{ marginLeft: 10 }}>REPLAY · HAND #{hand.hand_no}</strong>
+          <span className="mono" style={{ color: 'var(--pk-dim)', marginLeft: 8 }}>{hand.game_name}</span>
+        </div>
+        <div className="mono" style={{ color: 'var(--pk-gold)' }}>POT {usd(done ? hand.pot : pot)}</div>
+      </div>
+
+      <div className="felt" style={{ minHeight: 180 }}>
+        <div className="center">
+          {!noBoard && <Board cards={board} />}
+          <div className="pot">POT · {usd(done ? hand.pot : pot)}</div>
+          <div className="street">{done ? 'COMPLETE' : (visible[visible.length - 1]?.street || 'DEAL').toUpperCase()}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', margin: '14px 0', alignItems: 'center' }}>
+        <button className="btn ghost" onClick={() => { setPlaying(false); setStep(0); }}>⏮</button>
+        <button className="btn ghost" onClick={() => { setPlaying(false); setStep(s => Math.max(0, s - 1)); }}>‹ back</button>
+        <button className="btn gold" onClick={() => setPlaying(p => !p)}>{playing ? '⏸ pause' : '▶ play'}</button>
+        <button className="btn ghost" onClick={() => { setPlaying(false); setStep(s => Math.min(actions.length, s + 1)); }}>next ›</button>
+        <button className="btn ghost" onClick={() => { setPlaying(false); setStep(actions.length); }}>⏭</button>
+        <span className="mono" style={{ color: 'var(--pk-dim)' }}>{step}/{actions.length}</span>
+      </div>
+
+      <div className="row">
+        <div className="panel">
+          <h2>Action</h2>
+          <table className="tbl">
+            <tbody>
+              {visible.length === 0 && <tr><td className="hint">Press play — the cards are about to fly.</td></tr>}
+              {visible.slice().reverse().map((a, i) => (
+                <tr key={visible.length - i} style={i === 0 ? { color: 'var(--pk-gold)' } : {}}>
+                  <td className="mono" style={{ color: 'var(--pk-dim)' }}>{a.street}</td>
+                  <td>{seatName(a.seat)}</td>
+                  <td>{a.action === 'draw' ? (a.amount === 0 ? 'stands pat' : `draws ${a.amount}`) : `${a.action.replace(/_/g, ' ')}${a.amount > 0 ? ' ' + usd(a.amount) : ''}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="panel">
+          <h2>Seats {done ? '· Showdown' : ''}</h2>
+          <table className="tbl">
+            <tbody>
+              {seats.map(s => {
+                const cards = done ? (hand.hole_cards?.[s.seat] || []) : [];
+                const win = done ? (hand.winners || []).filter(w => w.seat === s.seat) : [];
+                return (
+                  <tr key={s.seat} style={{ opacity: folded.has(s.seat) ? 0.45 : 1 }}>
+                    <td>#{s.seat}</td>
+                    <td><A href={`/player/${encodeURIComponent(s.name)}`}>{s.name}</A>{s.is_bot ? ' ⚙' : ''}</td>
+                    <td style={{ display: 'flex', gap: 3 }}>
+                      {cards.length
+                        ? cards.map((c, i) => <Card key={i} code={c} sm />)
+                        : <span className="mono" style={{ color: 'var(--pk-dim)' }}>{folded.has(s.seat) ? 'folded' : '— —'}</span>}
+                    </td>
+                    <td style={{ color: 'var(--pk-gold)' }}>
+                      {win.map((w, i) => <div key={i}>+{usd(w.amount)}{w.pot_kind ? ` ${w.pot_kind.toUpperCase()}` : ''} {w.hand || ''}</div>)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {done && hand.rake > 0 && <div className="hint">House rake: {usd(hand.rake)}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------- player statistics */
+// Sharkscope-style cumulative profit curve, drawn as a bare SVG line.
+function ProfitGraph({ points }) {
+  if (!points || points.length < 2) {
+    return <div className="hint" style={{ padding: 30, textAlign: 'center' }}>Not enough hands for a curve yet.</div>;
+  }
+  const W = 760, H = 220, PAD = 8;
+  const min = Math.min(0, ...points);
+  const max = Math.max(0, ...points);
+  const span = Math.max(1, max - min);
+  const x = (i) => PAD + (i / (points.length - 1)) * (W - PAD * 2);
+  const y = (v) => PAD + (1 - (v - min) / span) * (H - PAD * 2);
+  const path = points.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const last = points[points.length - 1];
+  const up = last >= 0;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <line x1={PAD} x2={W - PAD} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,.18)" strokeDasharray="4 4" />
+      <path d={path} fill="none" stroke={up ? 'var(--pk-gold, #d8b25a)' : '#ff2418'} strokeWidth="2" />
+      <circle cx={x(points.length - 1)} cy={y(last)} r="3.5" fill={up ? '#d8b25a' : '#ff2418'} />
+    </svg>
+  );
+}
+
+function StatCard({ label, value, accent }) {
+  return (
+    <div className="callout" style={{ textAlign: 'center' }}>
+      <h3 style={accent ? { color: accent } : {}}>{value}</h3>
+      <p style={{ margin: 0 }}>{label}</p>
+    </div>
+  );
+}
+
+function PlayerPage({ username }) {
+  const [s, setS] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    setS(null);
+    api.get(`/api/players/${encodeURIComponent(username)}`).then(d => setS(d.stats)).catch(e => setErr(e.message));
+  }, [username]);
+
+  if (err) return <div className="wrap"><div className="center-msg">{err}</div></div>;
+  if (!s) return <div className="wrap"><div className="center-msg">Auditing the ledger…</div></div>;
+
+  const sign = (n) => `${n < 0 ? '-' : '+'}${usd(Math.abs(n))}`;
+  const profitColor = s.total_profit >= 0 ? 'var(--pk-gold)' : 'var(--pk-scs)';
+
+  return (
+    <div className="wrap">
+      <div className="toprow">
+        <div>
+          <A href="/players" className="badge">← SHARKS</A>
+          <strong style={{ marginLeft: 12, fontSize: 20 }}>{s.avatar} {s.username}</strong>
+          {s.is_bot && <span className="badge mo" style={{ marginLeft: 8 }}>MACHINE{s.bot_engine ? ` · ${s.bot_engine}` : ''}</span>}
+        </div>
+        <span className="mono" style={{ color: 'var(--pk-dim)' }}>in the ledger since {s.member_since}</span>
+      </div>
+
+      <div className="callouts">
+        <StatCard label="hands played" value={s.hands_played.toLocaleString()} />
+        <StatCard label="total profit" value={sign(s.total_profit)} accent={profitColor} />
+        <StatCard label="win rate" value={`${s.bb_per_100} bb/100`} accent={s.bb_per_100 >= 0 ? 'var(--pk-gold)' : 'var(--pk-scs)'} />
+      </div>
+      <div className="callouts">
+        <StatCard label="avg profit / hand" value={sign(s.avg_profit)} />
+        <StatCard label="VPIP (looseness)" value={`${s.vpip}%`} />
+        <StatCard label={`showdown wins (${s.showdowns} seen)`} value={`${s.showdown_win_pct}%`} />
+        <StatCard label="biggest pot dragged" value={usd(s.biggest_pot)} accent="var(--pk-gold)" />
+      </div>
+
       <div className="panel">
-        <h2>Recent Hands</h2>
+        <h2>Profit Curve</h2>
+        <div className="hint">Cumulative profit across all {s.hands_played.toLocaleString()} archived hands — the Sharkscope line, drawn in house blood.</div>
+        <ProfitGraph points={s.graph} />
+      </div>
+
+      <div className="row">
+        <div className="panel">
+          <h2>By Game</h2>
+          <table className="tbl">
+            <thead><tr><th>Game</th><th>Hands</th><th>Profit</th><th>bb/100</th></tr></thead>
+            <tbody>
+              {s.per_game.map(g => (
+                <tr key={g.game}>
+                  <td>{g.name}</td>
+                  <td>{g.hands.toLocaleString()}</td>
+                  <td style={{ color: g.profit >= 0 ? 'var(--pk-gold)' : 'var(--pk-scs)' }}>{sign(g.profit)}</td>
+                  <td>{g.bb_per_100}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="panel">
+          <h2>Recent Hands</h2>
+          <table className="tbl">
+            <thead><tr><th>#</th><th>Game</th><th>Pot</th><th>Net</th><th></th></tr></thead>
+            <tbody>
+              {s.recent.map(r => (
+                <tr key={r.hand_id}>
+                  <td>{r.hand_no}</td>
+                  <td className="mono">{r.game}</td>
+                  <td>{usd(r.pot)}</td>
+                  <td style={{ color: r.profit >= 0 ? 'var(--pk-gold)' : 'var(--pk-scs)' }}>{sign(r.profit)}</td>
+                  <td><A href={`/replay/${r.hand_id}`} className="badge">▶</A></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlayersPage() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { api.get('/api/players').then(d => setRows(d.players)).catch(() => setRows([])); }, []);
+  if (!rows) return <div className="wrap"><div className="center-msg">Ranking the predators…</div></div>;
+  return (
+    <div className="wrap">
+      <div className="toprow"><h2 style={{ margin: 0 }}>The Sharks</h2><span className="mono" style={{ color: 'var(--pk-dim)' }}>ranked by lifetime profit</span></div>
+      <div className="panel">
         <table className="tbl">
-          <thead><tr><th>#</th><th>Board</th><th>Pot</th><th>Winner</th></tr></thead>
+          <thead><tr><th>#</th><th>Player</th><th>Hands</th><th>Profit</th><th>bb/100</th><th>Biggest Pot</th></tr></thead>
           <tbody>
-            {hands.map(h => (
-              <tr key={h.id}>
-                <td>{h.hand_no}</td>
-                <td>{(h.board || []).join(' ') || '—'}</td>
-                <td>{usd(h.pot)}</td>
-                <td>{(h.winners || []).map(w => `#${w.seat} +${usd(w.amount)}`).join(', ')}</td>
+            {rows.map((r, i) => (
+              <tr key={r.username}>
+                <td className="mono">{i + 1}</td>
+                <td><A href={`/player/${encodeURIComponent(r.username)}`}>{r.avatar} {r.username}{r.is_bot ? ' ⚙' : ''}</A></td>
+                <td>{r.hands_played.toLocaleString()}</td>
+                <td style={{ color: r.total_profit >= 0 ? 'var(--pk-gold)' : 'var(--pk-scs)' }}>{r.total_profit < 0 ? '-' : '+'}{usd(Math.abs(r.total_profit))}</td>
+                <td>{r.bb_per_100}</td>
+                <td>{usd(r.biggest_pot)}</td>
               </tr>
             ))}
           </tbody>
@@ -528,7 +859,7 @@ function Admin() {
       </div>
 
       <SettingsPanel settings={d.settings} onSave={saveSettings} />
-      <StakesPanel stakes={d.stakes} onChange={load} />
+      <StakesPanel stakes={d.stakes} gameTypes={d.game_types} onChange={load} />
       <WithdrawalsPanel rows={d.pending_withdrawals} onChange={load} />
       {msg && <div className="ok">{msg}</div>}
       {err && <div className="err">{err}</div>}
@@ -564,19 +895,21 @@ function SettingsPanel({ settings, onSave }) {
   );
 }
 
-function StakesPanel({ stakes, onChange }) {
-  const [n, setN] = useState({ name: '', small_blind: 25, big_blind: 50, min_buy_in: 2000, max_buy_in: 5000, max_seats: 6, enabled: true });
+function StakesPanel({ stakes, gameTypes, onChange }) {
+  const [n, setN] = useState({ name: '', game_type: 'nlhe', small_blind: 25, big_blind: 50, min_buy_in: 2000, max_buy_in: 5000, max_seats: 6, enabled: true });
   const save = async (st) => { await api.post('/api/admin/stakes', st); onChange(); };
+  const games = gameTypes || { nlhe: "No-Limit Hold'em" };
   return (
     <div className="panel">
       <h2>Blind Ladder</h2>
-      <div className="hint">Tables auto-spawn per enabled stake × type. Standard NLHE blinds for the current population.</div>
+      <div className="hint">Tables auto-spawn per enabled stake × type. Every poker variant the house spreads lives here — hold'em, Omaha, stud, razz, short deck, draw.</div>
       <table className="tbl">
-        <thead><tr><th>Name</th><th>SB</th><th>BB</th><th>Min</th><th>Max</th><th>Seats</th><th>On</th></tr></thead>
+        <thead><tr><th>Name</th><th>Game</th><th>SB</th><th>BB</th><th>Min</th><th>Max</th><th>Seats</th><th>On</th></tr></thead>
         <tbody>
           {stakes.map(st => (
             <tr key={st.id}>
-              <td>{st.name}</td><td>{usd(st.small_blind)}</td><td>{usd(st.big_blind)}</td>
+              <td>{st.name}</td><td className="mono">{games[st.game_type || 'nlhe'] || st.game_type}</td>
+              <td>{usd(st.small_blind)}</td><td>{usd(st.big_blind)}</td>
               <td>{usd(st.min_buy_in)}</td><td>{usd(st.max_buy_in)}</td><td>{st.max_seats}</td>
               <td><button className="btn ghost" onClick={() => save({ ...st, enabled: !st.enabled })}>{st.enabled ? 'on' : 'off'}</button></td>
             </tr>
@@ -586,6 +919,11 @@ function StakesPanel({ stakes, onChange }) {
       <div className="hint" style={{ marginTop: 10 }}>New stake — all money values in dollars.</div>
       <div className="row" style={{ marginTop: 6 }}>
         <div><label>Name</label><input value={n.name} onChange={e => setN({ ...n, name: e.target.value })} placeholder="$10/$20" /></div>
+        <div><label>Game</label>
+          <select value={n.game_type} onChange={e => setN({ ...n, game_type: e.target.value })}>
+            {Object.entries(games).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
         <div><label>Small blind ($)</label><input type="number" step="0.01" value={(n.small_blind / 100).toFixed(2)} onChange={e => setN({ ...n, small_blind: Math.round(+e.target.value * 100) })} /></div>
         <div><label>Big blind ($)</label><input type="number" step="0.01" value={(n.big_blind / 100).toFixed(2)} onChange={e => setN({ ...n, big_blind: Math.round(+e.target.value * 100) })} /></div>
         <div><label>Min buy-in ($)</label><input type="number" step="0.01" value={(n.min_buy_in / 100).toFixed(2)} onChange={e => setN({ ...n, min_buy_in: Math.round(+e.target.value * 100) })} /></div>
@@ -632,8 +970,11 @@ function Router() {
   if (path === '/wallet') return <Wallet />;
   if (path === '/admin') return <Admin />;
   let m;
+  if (path === '/players') return <PlayersPage />;
   if ((m = path.match(/^\/tables\/(\d+)/))) return <TablePage id={m[1]} />;
   if ((m = path.match(/^\/observe\/(\d+)/))) return <Observe id={m[1]} />;
+  if ((m = path.match(/^\/replay\/(\d+)/))) return <Replay id={m[1]} />;
+  if ((m = path.match(/^\/player\/([^/]+)/))) return <PlayerPage username={decodeURIComponent(m[1])} />;
   return <div className="wrap"><div className="center-msg">Lost in the void. <A href="/">Return to the lobby.</A></div></div>;
 }
 
@@ -649,7 +990,7 @@ function App() {
     <Nav.Provider value={router}>
       <Me.Provider value={{ me, refresh }}>
         <UnitProvider>
-          <AppBar />
+          {!BARE && <AppBar />}
           <Router />
         </UnitProvider>
       </Me.Provider>

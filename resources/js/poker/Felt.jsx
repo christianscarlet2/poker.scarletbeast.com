@@ -17,27 +17,41 @@ function posFor(maxSeats, seatNo, total) {
   return ring[idx];
 }
 
+// Games with no community board (stud + draw families).
+const NO_BOARD = ['stud', 'razz', 'draw5'];
+
 export default function Felt({ state, mySeat, observer }) {
   if (!state || !state.hand) {
     return <div className="center-msg">The felt is dark. Waiting for souls…</div>;
   }
   const h = state.hand;
   const t = state.table;
+  const game = h.game || t.game || 'nlhe';
   const winners = {};
-  (h.winners || []).forEach(w => { winners[w.seat] = w; });
+  (h.winners || []).forEach(w => {
+    // A seat can scoop both halves of a hi-lo pot — accumulate.
+    const prev = winners[w.seat];
+    winners[w.seat] = prev
+      ? { ...w, amount: prev.amount + w.amount, hand: prev.hand, both: true }
+      : w;
+  });
   const bbc = t.bb;
+  const gameTag = t.game_short || (t.game_name ? t.game_name : null);
 
   return (
     <div className="felt">
       <div className="center">
-        <Board cards={h.board} />
+        {!NO_BOARD.includes(game) && <Board cards={h.board} />}
         <div className="pot">POT · <Money c={h.pot} bbCents={bbc} /></div>
-        <div className="street">{(h.street || '').toUpperCase()}{h.hand_no ? ` · HAND #${h.hand_no}` : ''}</div>
+        <div className="street">
+          {gameTag ? `${gameTag} · ` : ''}{(h.street || '').toUpperCase()}{h.hand_no ? ` · HAND #${h.hand_no}` : ''}
+        </div>
       </div>
       {Object.values(h.players).map((p) => {
         const [x, y] = posFor(t.max_seats, p.seat, t.max_seats);
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
+        const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
         return (
           <div
             key={p.seat}
@@ -48,13 +62,22 @@ export default function Felt({ state, mySeat, observer }) {
             <div className="av">{p.avatar || (p.is_bot ? '🤖' : '☠️')}</div>
             <div className="nm">{p.name}{p.is_bot ? ' ⚙' : ''}</div>
             <div className="stk"><Money c={p.stack} bbCents={bbc} /></div>
-            <div className="hole">
+            <div className={`hole${nCards > 4 ? ' many' : ''}`}>
               {p.in_hand && p.hole && p.hole.length
                 ? p.hole.map((c, i) => <Card key={i} code={c} sm />)
                 : null}
+              {p.in_hand && p.up && p.up.length
+                ? p.up.map((c, i) => <Card key={`u${i}`} code={c} sm />)
+                : null}
             </div>
             {p.committed_street > 0 && <div className="bet">bet <Money c={p.committed_street} bbCents={bbc} plain /></div>}
-            {win && <div className="winner">+<Money c={win.amount} bbCents={bbc} plain /> {win.hand || 'WINS'}</div>}
+            {win && (
+              <div className="winner">
+                +<Money c={win.amount} bbCents={bbc} plain />
+                {win.pot_kind && !win.both ? ` ${win.pot_kind.toUpperCase()} ·` : ''}
+                {win.both ? ' SCOOP ·' : ''} {win.hand || 'WINS'}
+              </div>
+            )}
           </div>
         );
       })}
@@ -67,6 +90,7 @@ export function ActionBar({ state, onAct, busy }) {
   const h = state.hand;
   const you = state.you;
   const [raiseTo, setRaiseTo] = useState(0);
+  const [discards, setDiscards] = useState([]); // hole indices marked for the muck
 
   const myTurn = you && you.seat_no != null && h && h.to_act === you.seat_no;
   const legal = (myTurn && h.legal) || {};
@@ -75,6 +99,7 @@ export function ActionBar({ state, onAct, busy }) {
   useEffect(() => {
     if (legal.raise) setRaiseTo(legal.raise.min_to);
     else if (legal.bet) setRaiseTo(legal.bet.min);
+    setDiscards([]);
   }, [h && h.to_act, h && h.street]);
 
   if (!myTurn) {
@@ -87,7 +112,33 @@ export function ActionBar({ state, onAct, busy }) {
     );
   }
 
-  const toCall = h.current_bet - (h.players[you.seat_no]?.committed_street || 0);
+  // ---- Draw phase: pick cards to throw away, then draw. -------------------
+  if (legal.draw) {
+    const hole = h.players[you.seat_no]?.hole || [];
+    const toggle = (i) => setDiscards(d => d.includes(i) ? d.filter(x => x !== i) : [...d, i]);
+    const mask = discards.reduce((m, i) => m | (1 << i), 0);
+    return (
+      <div className="actbar">
+        <ActionClock deadline={state.act_deadline} timeout={state.table.action_timeout} />
+        <span className="mono" style={{ color: 'var(--pk-dim)' }}>Tap cards to discard:</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {hole.map((c, i) => (
+            <span key={i} onClick={() => toggle(i)}
+              style={{ cursor: 'pointer', opacity: discards.includes(i) ? 0.35 : 1,
+                       transform: discards.includes(i) ? 'translateY(-8px)' : 'none', transition: 'all .15s' }}>
+              <Card code={c} sm />
+            </span>
+          ))}
+        </div>
+        <button className="btn gold" disabled={busy} onClick={() => { onAct('draw', mask); setDiscards([]); }}>
+          {discards.length === 0 ? 'Stand Pat' : `Draw ${discards.length}`}
+        </button>
+      </div>
+    );
+  }
+
+  const fixedBet = legal.bet && legal.bet.min === legal.bet.max;
+  const fixedRaise = legal.raise && legal.raise.min_to === legal.raise.max_to;
 
   return (
     <div className="actbar">
@@ -95,7 +146,9 @@ export function ActionBar({ state, onAct, busy }) {
       {legal.fold && <button className="btn" disabled={busy} onClick={() => onAct('fold')}>Fold</button>}
       {legal.check && <button className="btn gold" disabled={busy} onClick={() => onAct('check')}>Check</button>}
       {legal.call && <button className="btn gold" disabled={busy} onClick={() => onAct('call')}>Call {usd(legal.call.amount)}</button>}
-      {(legal.bet || legal.raise) && (
+      {fixedBet && <button className="btn" disabled={busy} onClick={() => onAct('bet', legal.bet.min)}>Bet {usd(legal.bet.min)}</button>}
+      {fixedRaise && <button className="btn" disabled={busy} onClick={() => onAct('raise', legal.raise.min_to)}>Raise to {usd(legal.raise.min_to)}</button>}
+      {((legal.bet && !fixedBet) || (legal.raise && !fixedRaise)) && (
         <div className="raise-row">
           <input
             type="range"

@@ -19,6 +19,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/tables', [PlayController::class, 'lobby']);
     Route::get('/tables/{table}/observe', [PlayController::class, 'observe']);
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
+    Route::get('/hands/{hand}', [PlayController::class, 'hand']);
+    Route::get('/players', [PlayController::class, 'players']);
+    Route::get('/players/{username}', [PlayController::class, 'playerStats']);
 
     // Authenticated machine play.
     Route::middleware('bot.token')->group(function () {

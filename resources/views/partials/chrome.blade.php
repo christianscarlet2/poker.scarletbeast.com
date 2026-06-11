@@ -44,4 +44,4 @@ a{color:var(--pk-scs)}
 .pk-sep{color:var(--pk-sc);opacity:.55;font-size:10px;vertical-align:middle}
 </style>
 
-@if (function_exists('sb_chrome_header')) {!! sb_chrome_header('Tables') !!} @endif
+@if (function_exists('sb_chrome_header') && empty($bare)) {!! sb_chrome_header('Tables') !!} @endif
