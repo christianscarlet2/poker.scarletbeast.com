@@ -99,6 +99,7 @@ Route::prefix('api')->group(function () {
     Route::get('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'sheet']);
     // Secret test fuse — token-gated, demo-mode only, undocumented.
     Route::post('/tables/{table}/detonate', [PlayController::class, 'detonate']);
+    Route::get('/tables/{table}/chat', [\App\Http\Controllers\ChatController::class, 'index']);
 });
 
 /* -------------------------------------------- authenticated player (web) */
@@ -126,6 +127,8 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/rewards/redeem', [\App\Http\Controllers\RewardsController::class, 'redeem']);
 
     Route::post('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'place']);
+
+    Route::post('/tables/{table}/chat', [\App\Http\Controllers\ChatController::class, 'send']);
 
     Route::get('/casino/{game}', [\App\Http\Controllers\CasinoController::class, 'state']);
     Route::post('/casino/play', [\App\Http\Controllers\CasinoController::class, 'play']);

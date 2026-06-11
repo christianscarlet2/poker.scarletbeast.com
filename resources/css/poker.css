@@ -97,6 +97,39 @@ label{display:block;font-family:var(--pk-mono);font-size:11px;letter-spacing:.12
   font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;
   box-shadow:0 3px 7px rgba(0,0,0,.65), inset 0 -2px 3px rgba(0,0,0,.25);z-index:4;
   font-family:var(--pk-sans)}
+/* ---------------- chat + emote theater ---------------- */
+.chat-panel .chat-scroll{max-height:230px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);
+  border-radius:9px;padding:10px;background:#080606}
+.chat-line{font-size:13px;margin:3px 0;line-height:1.45}
+.chat-line .who{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs);margin-right:7px}
+.chat-line .txt{color:var(--pk-bone)}
+.chat-line .emo{color:var(--pk-gold)}
+.emote-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:5px;margin-top:8px}
+.emote-grid button{font-size:21px;padding:7px 0;background:#0b0909;border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;cursor:pointer;transition:.12s}
+.emote-grid button:hover{transform:scale(1.18);border-color:rgba(216,178,90,.5)}
+.emote-grid button.tgt{border-color:rgba(255,36,24,.45)}
+.chat-arm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;
+  border:1px dashed rgba(255,36,24,.4);border-radius:8px;padding:8px;font-size:12px}
+.chat-arm .badge{cursor:pointer}
+/* burst: blooms up from the sender's seat */
+.fx-burst{position:absolute;z-index:30;font-size:40px;transform:translate(-50%,-50%);
+  pointer-events:none;animation:fxburst 2.2s ease-out forwards}
+@keyframes fxburst{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}
+  15%{opacity:1;transform:translate(-50%,-60%) scale(1.5)}
+  70%{opacity:1;transform:translate(-50%,-150%) scale(1.15)}
+  100%{opacity:0;transform:translate(-50%,-210%) scale(.9)}}
+/* projectile: flies sender → victim, then the impact blooms */
+.fx-fly{position:absolute;z-index:31;font-size:34px;pointer-events:none;
+  animation:fxfly .85s cubic-bezier(.3,.1,.7,.9) forwards}
+@keyframes fxfly{from{left:var(--fx);top:var(--fy);opacity:1;transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scale(.8)}
+  to{left:var(--tx);top:var(--ty);opacity:1;transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scale(1.25)}}
+.fx-impact{position:absolute;z-index:32;font-size:50px;transform:translate(-50%,-50%);opacity:0;
+  pointer-events:none;animation:fximpact 1.2s ease-out .82s forwards}
+@keyframes fximpact{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}
+  20%{opacity:1;transform:translate(-50%,-50%) scale(1.7)}
+  100%{opacity:0;transform:translate(-50%,-50%) scale(2.1)}}
+
 /* Bomb pot detonation — the felt shakes, the bomb drops, the pot erupts. */
 .bomb-blast{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;
   align-items:center;justify-content:center;pointer-events:none;

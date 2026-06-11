@@ -4,6 +4,7 @@ import { Money, usd, bb } from './money.jsx';
 import { useSkin } from './skin.jsx';
 import { STAT_INFO } from './statsInfo.js';
 import { voiceHandDiff } from './sounds.js';
+import { EMOTES } from './chat.jsx';
 
 // Seat positions around the oval (percent of felt box), for up to 9 seats,
 // laid out clockwise from bottom-center (the hero seat).
@@ -92,7 +93,34 @@ function HudChip({ rows, map, stats, above }) {
   );
 }
 
-export default function Felt({ state, mySeat, observer, hud, quiet }) {
+// Emote theater: bursts rise from the sender's seat; ordnance flies across
+// the felt to its victim and detonates on arrival.
+function EmoteFx({ effects, maxSeats, portrait }) {
+  return (effects || []).map(fx => {
+    const def = EMOTES[fx.body];
+    if (!def) return null;
+    const from = fx.from_seat ? posFor(maxSeats, fx.from_seat, portrait) : [50, 99]; // railbirds fire from the rail
+    if (def.targeted && fx.target_seat) {
+      const to = posFor(maxSeats, fx.target_seat, portrait);
+      const ang = Math.atan2(to[1] - from[1], to[0] - from[0]) * 180 / Math.PI;
+      return (
+        <React.Fragment key={fx.id}>
+          <span className="fx-fly" style={{
+            '--fx': `${from[0]}%`, '--fy': `${from[1]}%`,
+            '--tx': `${to[0]}%`, '--ty': `${to[1]}%`,
+            '--rot': `${fx.body === 'rocket' ? ang + 45 : 0}deg`,
+          }}>{def.e}</span>
+          <span className="fx-impact" style={{ left: `${to[0]}%`, top: `${to[1]}%` }}>
+            {fx.body === 'kiss' ? '💋' : fx.body === 'tomato' ? '🟥' : fx.body === 'egg' ? '🍳' : '💥'}
+          </span>
+        </React.Fragment>
+      );
+    }
+    return <span key={fx.id} className="fx-burst" style={{ left: `${from[0]}%`, top: `${from[1]}%` }}>{def.e}</span>;
+  });
+}
+
+export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
   const { skin } = useSkin();
   const [blast, setBlast] = useState(false);
   // The felt's voice: diff each hand update and play what changed.
@@ -134,6 +162,7 @@ export default function Felt({ state, mySeat, observer, hud, quiet }) {
 
   return (
     <div className="felt">
+      <EmoteFx effects={effects} maxSeats={t.max_seats} portrait={portrait} />
       {blast && (
         <div className="bomb-blast">
           <span className="b1">💣</span>

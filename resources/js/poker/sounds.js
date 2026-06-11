@@ -83,6 +83,15 @@ const CUES = {
     noise(0.8, { gain: 0.10, when: 0.18, lowpass: 500 });
     tone(55, 0.9, { type: 'sine', gain: 0.25, slide: -25 });
   },
+  // chat + emote theater
+  msg: () => tone(2000, 0.05, { type: 'sine', gain: 0.05 }),
+  emote: () => { tone(900, 0.07, { gain: 0.08 }); tone(1350, 0.09, { gain: 0.07, when: 0.06 }); },
+  rocket: () => {
+    tone(300, 0.55, { type: 'sawtooth', gain: 0.10, slide: 900 });   // whoosh up
+    noise(0.5, { gain: 0.08, lowpass: 2500 });
+    tone(90, 0.5, { type: 'sawtooth', gain: 0.18, when: 0.55, slide: -50 }); // impact
+    noise(0.45, { gain: 0.16, when: 0.55, lowpass: 1000 });
+  },
   ante: () => tone(1500, 0.05, { type: 'triangle', gain: 0.07 }),
   bring_in: () => tone(1500, 0.05, { type: 'triangle', gain: 0.07 }),
   post_sb: () => tone(1400, 0.04, { type: 'triangle', gain: 0.05 }),

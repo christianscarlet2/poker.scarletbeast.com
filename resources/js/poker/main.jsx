@@ -9,6 +9,7 @@ import { SkinProvider, useSkin, SkinSwitcher, DesktopTitlebar, MobileNav } from 
 import { STAT_INFO } from './statsInfo.js';
 import { toggleSound, soundMuted } from './sounds.js';
 import { CasinoLobby, CasinoGamePage } from './casino.jsx';
+import { useTableChat, ChatPanel } from './chat.jsx';
 
 /* ----------------------------------------------------- app / window context */
 // "Bare" = a standalone table window: just the felt, no shared chrome.
@@ -325,6 +326,7 @@ function TablePage({ id }) {
   const [err, setErr] = useState('');
   const [buyAmt, setBuyAmt] = useState(0);
   const { hud, hudOn, hudToggle } = useHud(id);
+  const { messages, effects, send } = useTableChat(id);
 
   const load = useCallback(() => {
     api.get(`/api/tables/${id}/state`).then(setState).catch(e => setErr(e.message));
@@ -375,7 +377,7 @@ function TablePage({ id }) {
         </div>
       </div>
 
-      <Felt state={state} mySeat={state.you?.seat_no} hud={hud} />
+      <Felt state={state} mySeat={state.you?.seat_no} hud={hud} effects={effects} />
 
       {me && (
         <ActionBar state={{ ...state, table: { ...t, action_timeout: 25 } }} onAct={act} busy={busy} />
@@ -398,7 +400,10 @@ function TablePage({ id }) {
       </div>
       {err && <div className="err" style={{ textAlign: 'center' }}>{err}</div>}
 
-      <SideBetsPanel tableId={id} />
+      <div className="row">
+        <ChatPanel tableId={id} me={me} seats={state.seats} send={send} messages={messages} />
+        <SideBetsPanel tableId={id} />
+      </div>
     </div>
   );
 }
@@ -408,6 +413,8 @@ function Observe({ id }) {
   const [state, setState] = useState(null);
   const [hands, setHands] = useState([]);
   const { hud, hudOn, hudToggle } = useHud(id);
+  const { messages, effects, send } = useTableChat(id);
+  const { me } = useMe();
   useEffect(() => {
     const load = () => {
       api.get(`/api/tables/${id}/observe`).then(d => setState({ table: d.table, hand: d.hand, you: null })).catch(() => {});
@@ -439,10 +446,13 @@ function Observe({ id }) {
           <TableLink id={id} className="btn ghost">Sit Down</TableLink>
         </div>
       </div>
-      <Felt state={state} observer hud={hud} />
+      <Felt state={state} observer hud={hud} effects={effects} />
       <Marquee items={PHRASES.machine} cls="hot flush" speed={48} />
 
-      <SideBetsPanel tableId={id} />
+      <div className="row">
+        <ChatPanel tableId={id} me={me} seats={(Object.values(state.hand?.players || {})).map(p => ({ seat_no: p.seat, name: p.name, status: 'sitting' }))} send={send} messages={messages} />
+        <SideBetsPanel tableId={id} />
+      </div>
 
       <div className="row">
         <div className="panel">
