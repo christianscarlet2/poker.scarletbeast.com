@@ -39,6 +39,9 @@ class TableManager
     /** Seat a soul, moving chips from bankroll onto the felt. */
     public function buyIn(PokerTable $table, User $user, int $amount, ?int $seatNo = null): Seat
     {
+        if ($table->tournament_id) {
+            throw new \RuntimeException('Tournament seats are assigned by the bracket — register instead.');
+        }
         if ($amount < $table->min_buy_in || $amount > $table->max_buy_in) {
             throw new \RuntimeException("Buy-in must be between {$table->min_buy_in} and {$table->max_buy_in}");
         }
@@ -94,6 +97,9 @@ class TableManager
     /** Stand up, returning the felt stack to bankroll. Disallowed mid-hand. */
     public function standUp(PokerTable $table, User $user): void
     {
+        if ($table->tournament_id) {
+            throw new \RuntimeException('No leaving a tournament — fold to the end or bust trying.');
+        }
         $this->withLock($table, function ($state) use ($table, $user) {
             $seat = Seat::where('table_id', $table->id)->where('user_id', $user->id)
                 ->where('status', '!=', 'empty')->first();

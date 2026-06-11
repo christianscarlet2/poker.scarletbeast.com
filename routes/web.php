@@ -124,4 +124,9 @@ Route::prefix('api/admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('/withdrawals/{withdrawal}/approve', [AdminController::class, 'approveWithdrawal']);
     Route::post('/withdrawals/{withdrawal}/reject', [AdminController::class, 'rejectWithdrawal']);
     Route::post('/grant', [AdminController::class, 'grantChips']);
+
+    Route::post('/tournaments', [\App\Http\Controllers\TournamentController::class, 'store']);
+    Route::post('/tournaments/{tournament}/start', [\App\Http\Controllers\TournamentController::class, 'start']);
+    Route::post('/tournaments/{tournament}/cancel', [\App\Http\Controllers\TournamentController::class, 'cancel']);
+    Route::post('/tournaments/{tournament}/fill-bots', [\App\Http\Controllers\TournamentController::class, 'fillBots']);
 });
