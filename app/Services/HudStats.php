@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Cache;
  */
 class HudStats
 {
-    private const CACHE_TTL = 120;
+    private const CACHE_TTL = 3600; // 1h — warmed hourly by poker:stats-refresh, so reads never pay the full scan
 
     /** PT4 stat name (as found in .pt4hud layouts) → our computed key. */
     public const MAP = [

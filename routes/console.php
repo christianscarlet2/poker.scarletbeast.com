@@ -12,3 +12,8 @@ Artisan::command('inspire', function () {
 // table tick) can otherwise write millions of ~6KB stack traces. Prune anything
 // older than 48h nightly. See guard in TableManager::tick().
 Schedule::command('queue:prune-failed --hours=48')->dailyAt('04:10');
+
+// Player statistics: fold new hands into the durable accumulators and warm the
+// read caches every hour, so /players and /player never run a cold full-archive
+// scan on a visitor's request (that once took 150s). See App\Services\PlayerStats.
+Schedule::command('poker:stats-refresh')->hourly()->withoutOverlapping();
