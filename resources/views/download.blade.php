@@ -125,6 +125,16 @@
                 <span class="dl dead">Coming soon</span>
                 <span class="soonbadge">Coming soon</span>
             </div>
+
+            {{-- Virtual Reality --}}
+            <div class="card soon">
+                <div class="ico">🕶️</div>
+                <h3>Virtual Reality</h3>
+                <div class="plat">Quest · SteamVR · PCVR</div>
+                <div class="desc">Pull up a chair at a felt that isn’t there. Read the room, not just the cards — and hear the table breathe.</div>
+                <span class="dl dead">Materializing…</span>
+                <span class="soonbadge">Summoning the room</span>
+            </div>
         </div>
 
         <p class="note"><b>Heads up:</b> the Windows and Linux desktop builds aren’t code-signed yet, so SmartScreen / Gatekeeper may warn on first launch — choose “run anyway”. The Android APK is signed. Everything points at <a href="https://poker.scarletbeast.com">poker.scarletbeast.com</a>, so the apps always reflect the live tables.</p>
