@@ -100,6 +100,7 @@ Route::prefix('api')->group(function () {
     // Secret test fuse — token-gated, demo-mode only, undocumented.
     Route::post('/tables/{table}/detonate', [PlayController::class, 'detonate']);
     Route::get('/tables/{table}/chat', [\App\Http\Controllers\ChatController::class, 'index']);
+    Route::get('/casino/{game}/hot', [\App\Http\Controllers\CasinoController::class, 'hot']);
 });
 
 /* -------------------------------------------- authenticated player (web) */

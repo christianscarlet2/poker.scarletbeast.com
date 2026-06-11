@@ -191,6 +191,21 @@ class CasinoController extends Controller
         });
     }
 
+    /**
+     * The wheel's memory: the last pockets across ALL players at this wheel —
+     * the HOT NUMBERS board every roulette pit posts. Public (pockets only).
+     */
+    public function hot(Request $request, string $game)
+    {
+        if (!in_array($game, ['roulette_us', 'roulette_eu'], true)) {
+            return response()->json(['error' => 'Only the wheels keep a public memory.'], 404);
+        }
+        $pockets = CasinoRound::where('game', $game)->where('status', 'settled')
+            ->latest('id')->limit(18)->pluck('outcome')
+            ->map(fn ($o) => $o['pocket'] ?? null)->filter()->values();
+        return response()->json(['pockets' => $pockets]);
+    }
+
     /** Open round (resume after refresh) + recent history for a game. */
     public function state(Request $request, string $game)
     {

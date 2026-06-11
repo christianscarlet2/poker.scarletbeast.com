@@ -44,10 +44,11 @@ function hudVal(key, v) {
 
 // Chip stack rendered ON the felt for a live street bet — denomination discs
 // scale with the wager, drifting toward the pot from the bettor's seat.
+// Pushed well clear of the seat→center corridor the HUD chips occupy.
 function FeltChips({ x, y, amount, bbc }) {
-  // Position part-way from the seat toward the table center.
-  const cx = x + (50 - x) * 0.30;
-  const cy = y + (46 - y) * 0.34;
+  // Position most of the way from the seat toward the table center.
+  const cx = x + (50 - x) * 0.46;
+  const cy = y + (46 - y) * 0.50;
   const discs = Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, amount / Math.max(1, bbc)) + 1) * 2));
   return (
     <div className="felt-chips" style={{ left: `${cx}%`, top: `${cy}%` }}>
@@ -215,13 +216,15 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
             {p.committed_street > 0 && (
               <FeltChips x={x} y={y} amount={p.committed_street} bbc={bbc} />
             )}
-            {/* The dealer puck sits on the felt beside the button seat. */}
-            {h.button === p.seat && (
-              <div className="dealer-puck" style={{
-                left: `${x + (50 - x) * 0.16}%`,
-                top: `${y + (46 - y) * 0.16}%`,
-              }}>D</div>
-            )}
+            {/* The dealer puck steps PERPENDICULAR to the seat→pot line, so it
+                never shares a lane with the HUD chip or the wagered stacks. */}
+            {h.button === p.seat && (() => {
+              const dx = 50 - x, dy = 46 - y;
+              const len = Math.max(1, Math.hypot(dx, dy));
+              const px = x + dx * 0.22 - (dy / len) * 9;  // sidestep off the corridor
+              const py = y + dy * 0.22 + (dx / len) * 9;
+              return <div className="dealer-puck" style={{ left: `${px}%`, top: `${py}%` }}>D</div>;
+            })()}
           </React.Fragment>
         );
       })}
