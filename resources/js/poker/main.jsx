@@ -1,0 +1,661 @@
+import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { createRoot } from 'react-dom/client';
+import { api } from './api.js';
+import Felt, { ActionBar } from './Felt.jsx';
+import Marquee, { PHRASES } from './Marquee.jsx';
+import { Card, Board } from './cards.jsx';
+import { UnitProvider, useUnit, Money, usd, dollars } from './money.jsx';
+
+/* ------------------------------------------------------------------ router */
+const Nav = createContext({ path: '/', go: () => {} });
+function useNav() { return useContext(Nav); }
+
+function useRouter() {
+  const [path, setPath] = useState(window.location.pathname);
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const go = useCallback((to) => {
+    if (to === window.location.pathname) return;
+    window.history.pushState({}, '', to);
+    setPath(to);
+    window.scrollTo(0, 0);
+  }, []);
+  return { path, go };
+}
+
+function A({ href, children, ...rest }) {
+  const { go } = useNav();
+  return <a href={href} onClick={(e) => { e.preventDefault(); go(href); }} {...rest}>{children}</a>;
+}
+
+/* -------------------------------------------------------------- session ctx */
+const Me = createContext(null);
+function useMe() { return useContext(Me); }
+
+/* ----------------------------------------------------------------- app bar */
+function AppBar() {
+  const { me, refresh } = useMe();
+  const { go } = useNav();
+  const { unit, toggle } = useUnit();
+  const logout = async () => { await api.post('/auth/logout'); await refresh(); go('/'); };
+  return (
+    <div className="wrap toprow">
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+        <A href="/" className="badge hvm">♠ LOBBY</A>
+        <a href="/api-docs" className="badge">API</a>
+        <a href="/download" className="badge">GET APP</a>
+        {me && <A href="/wallet" className="badge ho">VAULT</A>}
+        {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}
+      </div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <button className="badge" title="Toggle cash / big-blind display" onClick={toggle}>{unit === 'bb' ? 'BB' : '$'}</button>
+        {me ? (
+          <>
+            <span className="chips-pill">{me.avatar} {me.username} · {usd(me.chips)}</span>
+            <button className="btn ghost" onClick={logout}>Leave</button>
+          </>
+        ) : (
+          <>
+            <A href="/login" className="btn ghost">Enter</A>
+            <A href="/register" className="btn">Enlist</A>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- home */
+function Home() {
+  const [lobby, setLobby] = useState(null);
+  const [tab, setTab] = useState('human_vs_machine');
+  useEffect(() => {
+    const load = () => api.get('/api/lobby').then(setLobby).catch(() => {});
+    load();
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
+  }, []);
+
+  const tabs = [
+    ['human_vs_machine', 'Human vs Machine'],
+    ['machine_only', 'Machine Only'],
+    ['human_only', 'Human Only'],
+  ];
+  const phraseSet = tab === 'machine_only' ? PHRASES.machine : tab === 'human_only' ? PHRASES.flesh : PHRASES.arena;
+  const tables = (lobby?.tables || []).filter(t => t.type === tab);
+
+  return (
+    <>
+      <HeroLive heroId={lobby?.hero_table_id} />
+
+      <div className="wrap">
+        <Marquee items={PHRASES.arena} cls="hot flush" speed={54} />
+
+        <div className="callouts">
+          <div className="callout">
+            <div className="ic">🩸</div>
+            <h3>Bleed In, Cash Out</h3>
+            <p>Fund your seat with BTC or ETH. The maw scans the chain, credits your chips, and sweeps to cold. Withdraw to any address at the live rate.</p>
+          </div>
+          <div className="callout">
+            <div className="ic">⚙️</div>
+            <h3>The Machines Have a Buy-In</h3>
+            <p>Every felt can be stormed by AI bots through our public API. Beat them, or unleash your own. The Turing test pays real chips.</p>
+          </div>
+          <div className="callout">
+            <div className="ic">🃏</div>
+            <h3>Provably Cruel</h3>
+            <p>Every shuffle is seeded and revealed at showdown. No rigged decks — only bad beats you earned. The felt remembers everything.</p>
+          </div>
+        </div>
+
+        <Marquee items={phraseSet} cls="bone flush" speed={50} rev />
+
+        <div className="tabs">
+          {tabs.map(([k, label]) => (
+            <button key={k} className={`tab${tab === k ? ' on' : ''}`} onClick={() => setTab(k)}>{label}</button>
+          ))}
+        </div>
+
+        {!lobby ? <div className="center-msg">Summoning the felts…</div> : (
+          <div className="tbl-list">
+            {tables.length === 0 && <div className="center-msg">No felts of this kind are open. The auto-dealer will raise one shortly.</div>}
+            {tables.map(t => <TableCard key={t.id} t={t} />)}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function HeroLive({ heroId }) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    if (!heroId) return;
+    const load = () => api.get(`/api/tables/${heroId}/observe`).then(d => setState({ table: d.table, hand: d.hand, you: null })).catch(() => {});
+    load();
+    const id = setInterval(load, 1800);
+    return () => clearInterval(id);
+  }, [heroId]);
+
+  return (
+    <div className="hero">
+      <div className="wrap hero-grid">
+        <div>
+          <div className="kick">No-Limit Texas Hold'em · Man vs Machine</div>
+          <h1>The felt where <b>flesh</b> bleeds <b>silicon</b>.</h1>
+          <p className="sub">Real chips. Real crypto. Real bots. Sit down against opponents that never tilt and never sleep — or watch the machines devour each other. This is the last honest war.</p>
+          <div style={{ display: 'flex', gap: 12, marginTop: 22, flexWrap: 'wrap' }}>
+            <A href="/register" className="btn big">Claim a Seat</A>
+            {heroId && <A href={`/observe/${heroId}`} className="btn ghost big">Observe the Carnage</A>}
+            <a href="/download" className="btn ghost big">↓ Get the Apps</a>
+          </div>
+        </div>
+        <div>
+          {heroId
+            ? <Felt state={state} observer />
+            : <div className="center-msg">No live felt yet — the dealer is shuffling.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TableCard({ t }) {
+  const typeBadge = { human_vs_machine: 'hvm', machine_only: 'mo', human_only: 'ho' }[t.type];
+  const dots = [];
+  for (let i = 0; i < t.max_seats; i++) {
+    const cls = i < t.humans ? 'h' : i < t.humans + t.bots ? 'b' : '';
+    dots.push(<div key={i} className={`dot ${cls}`} />);
+  }
+  return (
+    <div className="tcard">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="nm">{t.name}</div>
+        <span className={`badge ${typeBadge}`}>{t.type.replace(/_/g, ' ')}</span>
+      </div>
+      <div className="meta"><span>Blinds {usd(t.sb)}/{usd(t.bb)}</span><span>{t.players}/{t.max_seats} seated</span></div>
+      <div className="seatbar">{dots}</div>
+      <div className="meta"><span>Buy-in {usd(t.min_buy_in)}–{usd(t.max_buy_in)}</span><span>Ⓗ{t.humans} ⚙{t.bots}</span></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <A href={`/tables/${t.id}`} className="btn" style={{ flex: 1, textAlign: 'center' }}>Sit Down</A>
+        <A href={`/observe/${t.id}`} className="btn ghost">Watch</A>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- table page */
+function TablePage({ id }) {
+  const { me, refresh } = useMe();
+  const { go } = useNav();
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [buyAmt, setBuyAmt] = useState(0);
+
+  const load = useCallback(() => {
+    api.get(`/api/tables/${id}/state`).then(setState).catch(e => setErr(e.message));
+  }, [id]);
+
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 1500);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  useEffect(() => {
+    if (state && !buyAmt) setBuyAmt(state.table.max_buy_in);
+  }, [state]);
+
+  const seated = state?.you?.seat_no != null;
+
+  const act = async (action, amount = 0) => {
+    setBusy(true); setErr('');
+    try { const r = await api.post(`/api/tables/${id}/act`, { action, amount }); setState(r.state ? { ...state, hand: r.state } : state); load(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  const sit = async () => {
+    setBusy(true); setErr('');
+    try { await api.post(`/api/tables/${id}/sit`, { amount: buyAmt }); await refresh(); load(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  const leave = async () => {
+    setBusy(true); setErr('');
+    try { await api.post(`/api/tables/${id}/leave`); await refresh(); load(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (!state) return <div className="wrap"><div className="center-msg">{err || 'Approaching the felt…'}</div></div>;
+  const t = state.table;
+
+  return (
+    <div className="wrap felt-wrap">
+      <div className="toprow">
+        <div><A href="/" className="badge">← LOBBY</A> <strong style={{ marginLeft: 10 }}>{t.name}</strong> <span className="mono" style={{ color: 'var(--pk-dim)' }}> · {usd(t.sb)}/{usd(t.bb)} · {t.type.replace(/_/g, ' ')}</span></div>
+        <div>{me ? <span className="chips-pill">{usd(me.chips)}</span> : <A href="/login" className="btn ghost">Enter to play</A>}</div>
+      </div>
+
+      <Felt state={state} mySeat={state.you?.seat_no} />
+
+      {me && (
+        <ActionBar state={{ ...state, table: { ...t, action_timeout: 25 } }} onAct={act} busy={busy} />
+      )}
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        {me && !seated && t.type !== 'machine_only' && (
+          <>
+            <span className="mono" style={{ color: 'var(--pk-gold)' }}>$</span>
+            <input style={{ width: 130 }} type="number" step="0.01" value={dollars(buyAmt)}
+              min={(t.min_buy_in / 100).toFixed(2)} max={(t.max_buy_in / 100).toFixed(2)}
+              onChange={e => setBuyAmt(Math.round(parseFloat(e.target.value || '0') * 100))} />
+            <button className="btn big" disabled={busy} onClick={sit}>Buy in</button>
+            <span className="mono" style={{ color: 'var(--pk-dim)', fontSize: 12 }}>({usd(t.min_buy_in)}–{usd(t.max_buy_in)})</span>
+          </>
+        )}
+        {me && seated && <button className="btn ghost" disabled={busy} onClick={leave}>Stand Up</button>}
+        {!me && <A href="/login" className="btn big">Enter to take a seat</A>}
+        {t.type === 'machine_only' && <span className="mono" style={{ color: 'var(--pk-dim)' }}>Machine-only felt — observe the silicon, or send a bot via the API.</span>}
+      </div>
+      {err && <div className="err" style={{ textAlign: 'center' }}>{err}</div>}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- observe */
+function Observe({ id }) {
+  const [state, setState] = useState(null);
+  const [hands, setHands] = useState([]);
+  useEffect(() => {
+    const load = () => {
+      api.get(`/api/tables/${id}/observe`).then(d => setState({ table: d.table, hand: d.hand, you: null })).catch(() => {});
+      api.get(`/api/tables/${id}/hands`).then(d => setHands(d.hands || [])).catch(() => {});
+    };
+    load();
+    const iv = setInterval(load, 1800);
+    return () => clearInterval(iv);
+  }, [id]);
+
+  if (!state) return <div className="wrap"><div className="center-msg">Pulling up a chair to watch…</div></div>;
+  return (
+    <div className="wrap felt-wrap">
+      <div className="toprow">
+        <div><A href="/" className="badge">← LOBBY</A> <strong style={{ marginLeft: 10 }}>OBSERVING · {state.table.name}</strong></div>
+        <A href={`/tables/${id}`} className="btn ghost">Sit Down</A>
+      </div>
+      <Felt state={state} observer />
+      <Marquee items={PHRASES.machine} cls="hot flush" speed={48} />
+      <div className="panel">
+        <h2>Recent Hands</h2>
+        <table className="tbl">
+          <thead><tr><th>#</th><th>Board</th><th>Pot</th><th>Winner</th></tr></thead>
+          <tbody>
+            {hands.map(h => (
+              <tr key={h.id}>
+                <td>{h.hand_no}</td>
+                <td>{(h.board || []).join(' ') || '—'}</td>
+                <td>{usd(h.pot)}</td>
+                <td>{(h.winners || []).map(w => `#${w.seat} +${usd(w.amount)}`).join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ auth */
+function AuthPage({ mode }) {
+  const { refresh } = useMe();
+  const { go } = useNav();
+  const [f, setF] = useState({ username: '', email: '', password: '' });
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [twofa, setTwofa] = useState(null); const [code, setCode] = useState(''); const [qr, setQr] = useState('');
+  useEffect(() => { if (twofa?.uri) import('qrcode').then(Q => Q.toDataURL(twofa.uri, { margin: 1, width: 210, color: { dark: '#ff2418', light: '#070505' } }).then(setQr).catch(() => {})); }, [twofa]);
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('');
+    try {
+      const r = await api.post(mode === 'register' ? '/auth/register' : '/auth/login', f);
+      if (r && r.twofa) { setTwofa(r.twofa); setCode(''); }
+      else { await refresh(); go('/'); }
+    } catch (e) { setErr(e.data?.errors ? Object.values(e.data.errors).flat().join(' ') : e.message); }
+    finally { setBusy(false); }
+  };
+  const verify = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('');
+    try { await api.post('/auth/2fa', { code }); await refresh(); go('/'); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  if (twofa) return (
+    <div className="wrap" style={{ maxWidth: 460 }}>
+      <div className="panel" style={{ marginTop: 40, textAlign: 'center' }}>
+        <h2>{twofa.step === 'enroll' ? 'Seal the Altar' : 'Prove it’s you'}</h2>
+        {twofa.step === 'enroll' ? (
+          <>
+            <div className="hint">Admin 2FA is required. Scan with <b>Google Authenticator</b>, then enter the code.</div>
+            {qr && <img src={qr} alt="2FA QR" style={{ width: 200, height: 200, margin: '14px auto', display: 'block', borderRadius: 12 }} />}
+            <div className="hint" style={{ wordBreak: 'break-all' }}>key: {twofa.secret}</div>
+          </>
+        ) : <div className="hint">Enter the 6-digit code from <b>Google Authenticator</b>.</div>}
+        <form onSubmit={verify}>
+          <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus value={code}
+            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000"
+            style={{ textAlign: 'center', letterSpacing: '.4em', fontSize: 22, fontWeight: 800, marginTop: 12 }} />
+          <button className="btn big" style={{ marginTop: 16, width: '100%' }} disabled={busy || code.length !== 6}>{busy ? 'Verifying…' : (twofa.step === 'enroll' ? 'Confirm & enter' : 'Cross the threshold')}</button>
+        </form>
+        {err && <div className="err">{err}</div>}
+        <div className="hint" style={{ marginTop: 12 }}><A href="/login" onClick={() => setTwofa(null)}>‹ back</A></div>
+      </div>
+    </div>
+  );
+  return (
+    <div className="wrap" style={{ maxWidth: 460 }}>
+      <div className="panel" style={{ marginTop: 40 }}>
+        <h2>{mode === 'register' ? 'Enlist' : 'Enter'}</h2>
+        <div className="hint">{mode === 'register' ? 'Claim a name. The beast keeps a ledger of every soul.' : 'Speak your name and key.'}</div>
+        <form onSubmit={submit}>
+          <label>Username</label>
+          <input value={f.username} onChange={e => setF({ ...f, username: e.target.value })} autoFocus />
+          {mode === 'register' && <>
+            <label>Email (optional)</label>
+            <input value={f.email} onChange={e => setF({ ...f, email: e.target.value })} />
+          </>}
+          <label>Password</label>
+          <input type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
+          <button className="btn big" style={{ marginTop: 18, width: '100%' }} disabled={busy}>
+            {mode === 'register' ? 'Sign in blood' : 'Cross the threshold'}
+          </button>
+        </form>
+        {err && <div className="err">{err}</div>}
+        <div className="hint" style={{ marginTop: 14 }}>
+          {mode === 'register'
+            ? <>Already sworn? <A href="/login">Enter</A></>
+            : <>No name yet? <A href="/register">Enlist</A></>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- wallet */
+function Wallet() {
+  const { me, refresh } = useMe();
+  const [w, setW] = useState(null);
+  const [dep, setDep] = useState(null);
+  const [wd, setWd] = useState({ currency: 'btc', address: '', chips: 0 });
+  const [tok, setTok] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = () => api.get('/api/wallet').then(setW).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+
+  const genAddr = async (currency) => {
+    setErr(''); setDep(null);
+    try { setDep(await api.post('/api/wallet/address', { currency })); }
+    catch (e) { setErr(e.message); }
+  };
+  const withdraw = async (e) => {
+    e.preventDefault(); setErr(''); setMsg('');
+    try { const r = await api.post('/api/wallet/withdraw', wd); setMsg(r.note); await refresh(); load(); }
+    catch (e) { setErr(e.message); }
+  };
+  const genToken = async () => {
+    try { const r = await api.post('/api/me/token'); setTok(r.token); }
+    catch (e) { setErr(e.message); }
+  };
+
+  if (!me) return <div className="wrap"><div className="center-msg">Enter first. <A href="/login">Sign in.</A></div></div>;
+  if (!w) return <div className="wrap"><div className="center-msg">Opening the vault…</div></div>;
+
+  return (
+    <div className="wrap">
+      <Marquee items={PHRASES.vault} cls="gold flush" speed={50} />
+      <div className="toprow"><h2 style={{ margin: 0 }}>The Vault</h2><span className="chips-pill">Balance · {usd(w.chips)}</span></div>
+
+      <div className="row">
+        <div className="panel">
+          <h2>Deposit</h2>
+          <div className="hint">Send BTC or ETH ({w.network} network). The scanner watches the chain and credits your balance in <strong>real cash</strong> — at the coin's USD value the moment it lands. Deposit $20 worth, the maw sees $18.88 on arrival, you get $18.88.</div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={() => genAddr('btc')} disabled={!w.configured.btc}>BTC address</button>
+            <button className="btn" onClick={() => genAddr('eth')} disabled={!w.configured.eth}>ETH address</button>
+          </div>
+          {(!w.configured.btc && !w.configured.eth) && <div className="hint" style={{ marginTop: 10 }}>⚠ Crypto is not yet armed by the warden (no house xpub set).</div>}
+          {dep && (
+            <div style={{ marginTop: 16, textAlign: 'center' }}>
+              <img className="qr" src={dep.qr} alt="deposit QR" />
+              <div className="addr" style={{ marginTop: 10 }}>{dep.address}</div>
+              <div className="hint">{dep.note}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <h2>Withdraw</h2>
+          <div className="hint">Cash out to any address. We take your USD balance and pay you that much in BTC/ETH at the live rate. The warden reviews each rite.</div>
+          <form onSubmit={withdraw}>
+            <label>Currency</label>
+            <select value={wd.currency} onChange={e => setWd({ ...wd, currency: e.target.value })}>
+              <option value="btc">BTC · ${w.rates.btc.toLocaleString()}</option>
+              <option value="eth">ETH · ${w.rates.eth.toLocaleString()}</option>
+            </select>
+            <label>Destination address</label>
+            <input value={wd.address} onChange={e => setWd({ ...wd, address: e.target.value })} placeholder="bc1… / 0x…" />
+            <label>Cash to withdraw (USD)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="mono" style={{ color: 'var(--pk-gold)' }}>$</span>
+              <input type="number" step="0.01" value={(wd.chips / 100).toFixed(2)} max={(w.chips / 100).toFixed(2)}
+                onChange={e => setWd({ ...wd, chips: Math.round(parseFloat(e.target.value || '0') * 100) })} />
+              <button type="button" className="btn ghost" onClick={() => setWd({ ...wd, chips: w.chips })}>Max</button>
+            </div>
+            <div className="hint" style={{ marginTop: 6 }}>
+              ≈ {((wd.chips / 100) / (w.rates[wd.currency] || 1)).toFixed(8)} {wd.currency.toUpperCase()} at ${w.rates[wd.currency]?.toLocaleString()}
+            </div>
+            <button className="btn big" style={{ marginTop: 16, width: '100%' }}>Demand withdrawal</button>
+          </form>
+          {msg && <div className="ok">{msg}</div>}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>Machine Key</h2>
+        <div className="hint">Mint an API token to play this account through a bot. Sent as <code className="mono">Authorization: Bearer …</code>. See the <a href="/api-docs">API docs</a>.</div>
+        <button className="btn" onClick={genToken}>{w ? 'Generate / rotate token' : ''}</button>
+        {tok && <div className="addr" style={{ marginTop: 12 }}>{tok}<div className="hint">Shown once. Store it now.</div></div>}
+      </div>
+
+      <div className="panel">
+        <h2>Ledger</h2>
+        <table className="tbl">
+          <thead><tr><th>Type</th><th>Δ cash</th><th>Balance</th><th>Memo</th></tr></thead>
+          <tbody>
+            {(w.deposits || []).length === 0 && (me.ledger || []).length === 0 && <tr><td colSpan="4">No movements yet.</td></tr>}
+            {(me.ledger || []).map(l => (
+              <tr key={l.id}><td>{l.type}</td><td>{l.delta > 0 ? '+' : '-'}{usd(Math.abs(l.delta))}</td><td>{usd(l.balance_after)}</td><td>{l.memo}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ admin */
+function Admin() {
+  const { me } = useMe();
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const load = () => api.get('/api/admin').then(setD).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+
+  if (!me || !me.is_admin) return <div className="wrap"><div className="center-msg">The altar is sealed.</div></div>;
+  if (!d) return <div className="wrap"><div className="center-msg">{err || 'Opening the altar…'}</div></div>;
+
+  const saveSettings = async (s) => {
+    setMsg(''); setErr('');
+    try { await api.post('/api/admin/settings', s); setMsg('Settings burned in.'); load(); }
+    catch (e) { setErr(e.message); }
+  };
+
+  return (
+    <div className="wrap">
+      <div className="toprow"><h2 style={{ margin: 0 }}>The Altar</h2></div>
+      <div className="callouts">
+        <div className="callout"><div className="ic">👤</div><h3>{d.stats.players}</h3><p>souls · {d.stats.bots} machines</p></div>
+        <div className="callout"><div className="ic">🎰</div><h3>{d.stats.tables}</h3><p>live felts · {d.stats.seated} seated</p></div>
+        <div className="callout"><div className="ic">💰</div><h3>{usd(d.stats.cash_in_play)}</h3><p>cash in play · {usd(d.stats.cash_banked)} banked</p></div>
+      </div>
+
+      <div className="panel" style={{ borderColor: 'rgba(216,178,90,.4)' }}>
+        <h2>🩸 Rake Collected</h2>
+        <div className="hint">{d.settings.rake_bps / 100}% of every flopped pot, capped at {d.settings.rake_cap_bb} BB (no flop, no drop).</div>
+        <div className="callouts" style={{ margin: '6px 0 0' }}>
+          <div className="callout gold"><div className="ic">⛧</div><h3 style={{ color: 'var(--pk-gold)' }}>{usd(d.stats.rake_total)}</h3><p>all-time rake</p></div>
+          <div className="callout"><div className="ic">🌅</div><h3>{usd(d.stats.rake_today)}</h3><p>raked today</p></div>
+          <div className="callout"><div className="ic">🃏</div><h3>{d.stats.rake_hands.toLocaleString()}</h3><p>hands raked</p></div>
+        </div>
+      </div>
+
+      <SettingsPanel settings={d.settings} onSave={saveSettings} />
+      <StakesPanel stakes={d.stakes} onChange={load} />
+      <WithdrawalsPanel rows={d.pending_withdrawals} onChange={load} />
+      {msg && <div className="ok">{msg}</div>}
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
+}
+
+function SettingsPanel({ settings, onSave }) {
+  const [s, setS] = useState(settings);
+  const f = (k) => ({ value: s[k] ?? '', onChange: (e) => setS({ ...s, [k]: e.target.value }) });
+  return (
+    <div className="panel">
+      <h2>Machine Topology & House Rules</h2>
+      <div className="hint">Workers = cpu_count × workers_per_cpu RabbitMQ consumers. The supervisor scales live.</div>
+      <div className="row">
+        <div><label>CPU count</label><input type="number" {...f('cpu_count')} /></div>
+        <div><label>Workers per CPU</label><input type="number" {...f('workers_per_cpu')} /></div>
+        <div><label>Action timeout (s)</label><input type="number" {...f('action_timeout')} /></div>
+        <div><label>Rake (bps)</label><input type="number" {...f('rake_bps')} /></div>
+        <div><label>Min bots / table</label><input type="number" {...f('min_bots_per_table')} /></div>
+        <div><label>Bot think min (ms)</label><input type="number" {...f('bot_think_min')} /></div>
+        <div><label>Bot think max (ms)</label><input type="number" {...f('bot_think_max')} /></div>
+        <div><label>Crypto network</label>
+          <select value={s.crypto_network} onChange={e => setS({ ...s, crypto_network: e.target.value })}>
+            <option value="test">test</option><option value="main">main</option>
+          </select>
+        </div>
+        <div><label>BTC main (cold) wallet</label><input {...f('btc_main_wallet')} /></div>
+        <div><label>ETH main (cold) wallet</label><input {...f('eth_main_wallet')} /></div>
+      </div>
+      <button className="btn big" style={{ marginTop: 16 }} onClick={() => onSave(s)}>Burn in settings</button>
+    </div>
+  );
+}
+
+function StakesPanel({ stakes, onChange }) {
+  const [n, setN] = useState({ name: '', small_blind: 25, big_blind: 50, min_buy_in: 2000, max_buy_in: 5000, max_seats: 6, enabled: true });
+  const save = async (st) => { await api.post('/api/admin/stakes', st); onChange(); };
+  return (
+    <div className="panel">
+      <h2>Blind Ladder</h2>
+      <div className="hint">Tables auto-spawn per enabled stake × type. Standard NLHE blinds for the current population.</div>
+      <table className="tbl">
+        <thead><tr><th>Name</th><th>SB</th><th>BB</th><th>Min</th><th>Max</th><th>Seats</th><th>On</th></tr></thead>
+        <tbody>
+          {stakes.map(st => (
+            <tr key={st.id}>
+              <td>{st.name}</td><td>{usd(st.small_blind)}</td><td>{usd(st.big_blind)}</td>
+              <td>{usd(st.min_buy_in)}</td><td>{usd(st.max_buy_in)}</td><td>{st.max_seats}</td>
+              <td><button className="btn ghost" onClick={() => save({ ...st, enabled: !st.enabled })}>{st.enabled ? 'on' : 'off'}</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="hint" style={{ marginTop: 10 }}>New stake — all money values in dollars.</div>
+      <div className="row" style={{ marginTop: 6 }}>
+        <div><label>Name</label><input value={n.name} onChange={e => setN({ ...n, name: e.target.value })} placeholder="$10/$20" /></div>
+        <div><label>Small blind ($)</label><input type="number" step="0.01" value={(n.small_blind / 100).toFixed(2)} onChange={e => setN({ ...n, small_blind: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Big blind ($)</label><input type="number" step="0.01" value={(n.big_blind / 100).toFixed(2)} onChange={e => setN({ ...n, big_blind: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Min buy-in ($)</label><input type="number" step="0.01" value={(n.min_buy_in / 100).toFixed(2)} onChange={e => setN({ ...n, min_buy_in: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Max buy-in ($)</label><input type="number" step="0.01" value={(n.max_buy_in / 100).toFixed(2)} onChange={e => setN({ ...n, max_buy_in: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Max seats</label><input type="number" value={n.max_seats} onChange={e => setN({ ...n, max_seats: +e.target.value })} /></div>
+      </div>
+      <button className="btn" style={{ marginTop: 12 }} onClick={() => save(n)}>Add stake</button>
+    </div>
+  );
+}
+
+function WithdrawalsPanel({ rows, onChange }) {
+  const act = async (id, how) => { await api.post(`/api/admin/withdrawals/${id}/${how}`); onChange(); };
+  return (
+    <div className="panel">
+      <h2>Pending Withdrawals</h2>
+      {rows.length === 0 ? <div className="hint">No outbound rites awaiting the warden.</div> : (
+        <table className="tbl">
+          <thead><tr><th>User</th><th>Cur</th><th>Address</th><th>Cash</th><th>Crypto</th><th></th></tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id}>
+                <td>{r.user?.username}</td><td>{r.currency}</td><td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.to_address}</td>
+                <td>{usd(r.amount_chips)}</td><td>{r.amount_crypto}</td>
+                <td style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn" onClick={() => act(r.id, 'approve')}>Approve</button>
+                  <button className="btn ghost" onClick={() => act(r.id, 'reject')}>Reject</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- root */
+function Router() {
+  const { path } = useNav();
+  if (path === '/' ) return <Home />;
+  if (path === '/login') return <AuthPage mode="login" />;
+  if (path === '/register') return <AuthPage mode="register" />;
+  if (path === '/wallet') return <Wallet />;
+  if (path === '/admin') return <Admin />;
+  let m;
+  if ((m = path.match(/^\/tables\/(\d+)/))) return <TablePage id={m[1]} />;
+  if ((m = path.match(/^\/observe\/(\d+)/))) return <Observe id={m[1]} />;
+  return <div className="wrap"><div className="center-msg">Lost in the void. <A href="/">Return to the lobby.</A></div></div>;
+}
+
+function App() {
+  const router = useRouter();
+  const [me, setMe] = useState(null);
+  const refresh = useCallback(async () => {
+    try { setMe(await api.get('/api/me')); } catch (e) { setMe(null); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  return (
+    <Nav.Provider value={router}>
+      <Me.Provider value={{ me, refresh }}>
+        <UnitProvider>
+          <AppBar />
+          <Router />
+        </UnitProvider>
+      </Me.Provider>
+    </Nav.Provider>
+  );
+}
+
+const root = document.getElementById('poker-root');
+if (root) createRoot(root).render(<App />);
