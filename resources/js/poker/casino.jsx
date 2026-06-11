@@ -516,21 +516,26 @@ export function SlotsGame({ me, refresh }) {
 export function CasinoGamePage({ game, me, refresh, A }) {
   const def = GAMES.find(g => g.id === game);
   if (!def) return <div className="wrap"><div className="center-msg">No such game in the pit.</div></div>;
-  const Inner = {
-    roulette_eu: () => <RouletteGame variant="roulette_eu" me={me} refresh={refresh} />,
-    roulette_us: () => <RouletteGame variant="roulette_us" me={me} refresh={refresh} />,
-    blackjack: () => <BlackjackGame me={me} refresh={refresh} />,
-    craps: () => <CrapsGame me={me} refresh={refresh} />,
-    videopoker: () => <VideoPokerGame me={me} refresh={refresh} />,
-    slots: () => <SlotsGame me={me} refresh={refresh} />,
-  }[game];
+  // Render each game with a STABLE component identity (not an inline arrow) so
+  // a parent re-render — e.g. the refresh() that fires after a round settles —
+  // never remounts the game and wipes its result. The last result stays in the
+  // viewport until the player starts a new game with the primary button.
+  let inner = null;
+  switch (game) {
+    case 'roulette_eu': inner = <RouletteGame variant="roulette_eu" me={me} refresh={refresh} />; break;
+    case 'roulette_us': inner = <RouletteGame variant="roulette_us" me={me} refresh={refresh} />; break;
+    case 'blackjack': inner = <BlackjackGame me={me} refresh={refresh} />; break;
+    case 'craps': inner = <CrapsGame me={me} refresh={refresh} />; break;
+    case 'videopoker': inner = <VideoPokerGame me={me} refresh={refresh} />; break;
+    case 'slots': inner = <SlotsGame me={me} refresh={refresh} />; break;
+  }
   return (
     <div className="wrap">
       <div className="toprow">
         <div><A href="/casino" className="badge">← THE PIT</A> <strong style={{ marginLeft: 10, fontSize: 18 }}>{def.icon} {def.name}</strong></div>
         {me && <span className="chips-pill">{usd(me.chips)}</span>}
       </div>
-      <Inner />
+      {inner}
     </div>
   );
 }
