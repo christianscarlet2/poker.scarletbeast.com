@@ -8,9 +8,13 @@ async function req(method, url, body) {
     credentials: 'same-origin',
   };
   if (body !== undefined) {
-    opts.headers['Content-Type'] = 'application/json';
     opts.headers['X-CSRF-TOKEN'] = CSRF;
-    opts.body = JSON.stringify(body);
+    if (body instanceof FormData) {
+      opts.body = body; // browser sets the multipart boundary header
+    } else {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
   }
   const res = await fetch(url, opts);
   let data = null;

@@ -50,6 +50,8 @@ Route::prefix('api')->group(function () {
     Route::get('/hands/{hand}', [PlayController::class, 'hand']);
     Route::get('/players', [PlayController::class, 'players']);
     Route::get('/players/{username}', [PlayController::class, 'playerStats']);
+    Route::get('/tables/{table}/hud', [\App\Http\Controllers\HudController::class, 'table']);
+    Route::get('/hud/profiles', [\App\Http\Controllers\HudController::class, 'index']);
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
 });
 
@@ -65,6 +67,10 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::post('/wallet/address', [WalletController::class, 'depositAddress']);
     Route::post('/wallet/withdraw', [WalletController::class, 'withdraw']);
+
+    Route::post('/hud/upload', [\App\Http\Controllers\HudController::class, 'upload']);
+    Route::post('/hud/select', [\App\Http\Controllers\HudController::class, 'select']);
+    Route::delete('/hud/profiles/{profile}', [\App\Http\Controllers\HudController::class, 'destroy']);
 });
 
 /* ------------------------------------------------------------- the altar */

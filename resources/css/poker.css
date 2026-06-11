@@ -121,3 +121,134 @@ table.tbl th{color:var(--pk-scs);text-transform:uppercase;letter-spacing:.1em;fo
 .chips-pill{font-family:var(--pk-mono);font-size:12px;color:var(--pk-gold);border:1px solid rgba(216,178,90,.4);
   padding:5px 11px;border-radius:20px}
 .toprow{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:20px 0 4px;flex-wrap:wrap}
+
+/* ---------------- HUD (PokerTracker overlay) ---------------- */
+.hud-chip{margin:4px auto 0;display:inline-block;text-align:left;background:rgba(6,4,4,.92);
+  border:1px solid rgba(216,178,90,.35);border-radius:5px;padding:3px 6px;
+  font-family:var(--pk-mono);font-size:9px;line-height:1.5;color:var(--pk-bone);
+  box-shadow:0 2px 10px rgba(0,0,0,.55);max-width:150px}
+.hud-row{white-space:nowrap}
+.hud-it{margin-right:6px}
+.hud-it:last-child{margin-right:0}
+.hud-it i{font-style:normal;color:var(--pk-dim);margin-right:1px}
+.hud-it i::after{content:':'}
+.skin-mobile .hud-chip{font-size:8px;max-width:120px;padding:2px 5px}
+.skin-desktop .hud-chip{border-radius:2px}
+.hud-pop{position:absolute;right:0;top:30px;z-index:80;width:280px;background:#0c0808;
+  border:1px solid rgba(216,178,90,.4);border-radius:10px;padding:14px;text-align:left;
+  box-shadow:0 12px 40px rgba(0,0,0,.7)}
+.hud-pick{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  font-family:var(--pk-mono);font-size:12px;padding:7px 8px;border-radius:7px;cursor:pointer}
+.hud-pick:hover{background:rgba(216,178,90,.08)}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SKINS — one brand, three postures.
+   web      (baseline above)  the shop window: editorial, marquees, the pitch
+   desktop  the war room:     dense grinder terminal — titlebar, hairlines,
+                              scanlines, hotkeys, sharp corners
+   mobile   the pocket felt:  one-thumb play — bottom dock, fat targets,
+                              fixed action bar over the safe area
+   ════════════════════════════════════════════════════════════════════════ */
+
+.skin-switch{cursor:pointer;background:transparent}
+
+/* ─────────────────────────── DESKTOP · WAR ROOM ────────────────────────── */
+/* Faint phosphor scanlines over everything: a terminal, not a brochure. */
+body.skin-desktop::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px)}
+body.skin-desktop{scrollbar-color:#3a1210 #0a0707}
+.skin-desktop ::-webkit-scrollbar{width:10px;height:10px}
+.skin-desktop ::-webkit-scrollbar-track{background:#0a0707}
+.skin-desktop ::-webkit-scrollbar-thumb{background:#3a1210;border-radius:0;border:2px solid #0a0707}
+.skin-desktop ::-webkit-scrollbar-thumb:hover{background:#5a1a14}
+
+.dt-titlebar{display:flex;align-items:center;gap:14px;padding:7px 14px;
+  font-family:var(--pk-mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--pk-dim);background:linear-gradient(180deg,#120808,#0a0505);
+  border-bottom:1px solid rgba(255,36,24,.35);user-select:none;
+  -webkit-app-region:drag;position:sticky;top:0;z-index:60}
+.dt-titlebar .dt-brand{color:var(--pk-scs)}
+.dt-titlebar .dt-brand i{color:var(--pk-dim);font-style:normal}
+.dt-titlebar .dt-spacer{flex:1}
+.dt-titlebar .dt-clock{color:var(--pk-gold)}
+.dt-titlebar .dt-keys{color:#5a544c}
+
+/* Density: the grinder wants tables on screen, not air. */
+.skin-desktop .wrap{max-width:1560px;padding:0 16px}
+.skin-desktop .toprow{margin:12px 0 4px}
+.skin-desktop .hero{padding:18px 0 10px}
+.skin-desktop .hero h1{font-size:clamp(22px,3.4vw,38px)}
+.skin-desktop .hero .sub{font-size:13px;max-width:520px}
+.skin-desktop .hero .kick{margin-bottom:10px;font-size:10.5px}
+.skin-desktop .callouts{display:none}          /* the app needs no pitch */
+.skin-desktop .pk-mq{display:none}             /* no carnival in the war room */
+.skin-desktop .tbl-list{grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:9px}
+.skin-desktop .tcard{padding:10px 12px;gap:6px;border-radius:4px}
+.skin-desktop .tcard .nm{font-size:13.5px}
+.skin-desktop .btn{padding:7px 12px;font-size:11px;border-radius:4px}
+.skin-desktop .btn.big{padding:9px 15px;font-size:11.5px}
+.skin-desktop .tab{padding:8px 13px;border-radius:4px;font-size:11px}
+.skin-desktop .panel{padding:14px 16px;margin:10px 0;border-radius:4px}
+.skin-desktop .badge{border-radius:3px}
+.skin-desktop input,.skin-desktop select{padding:7px 10px;font-size:12.5px;border-radius:4px}
+.skin-desktop .felt{border-width:7px;margin:10px auto}
+.skin-desktop .actbar{border-radius:4px;padding:12px}
+.skin-desktop .chips-pill{border-radius:4px}
+/* Hairline precision on hover — the cursor is a weapon here. */
+.skin-desktop .tcard:hover{border-color:rgba(255,36,24,.55);box-shadow:0 0 0 1px rgba(255,36,24,.25)}
+.skin-desktop table.tbl{font-size:11.5px}
+.skin-desktop table.tbl th,.skin-desktop table.tbl td{padding:5px 8px}
+
+/* ─────────────────────────── MOBILE · POCKET FELT ──────────────────────── */
+.skin-mobile .wrap{padding:0 13px}
+.skin-mobile .toprow{margin:12px 0 4px;gap:8px}
+/* Compact pitch: a poster, not an essay. */
+.skin-mobile .hero{padding:22px 0 14px}
+.skin-mobile .hero h1{font-size:clamp(30px,9.5vw,42px)}
+.skin-mobile .hero .sub{font-size:14px}
+.skin-mobile .hero-grid{grid-template-columns:1fr;gap:18px}
+.skin-mobile .callouts{grid-template-columns:1fr;gap:10px;margin:18px 0}
+.skin-mobile .callout{padding:14px 16px}
+.skin-mobile .tbl-list{grid-template-columns:1fr;gap:10px}
+/* Thumb law: every target ≥ 44px, presses feel physical. */
+.skin-mobile .btn{padding:14px 18px;font-size:13.5px;border-radius:12px}
+.skin-mobile .btn.big{padding:16px 22px;font-size:14px}
+.skin-mobile .btn:active{transform:scale(.96)}
+.skin-mobile .tab{padding:12px 15px;border-radius:11px}
+.skin-mobile input,.skin-mobile select{padding:13px 14px;font-size:16px} /* 16px kills iOS zoom */
+.skin-mobile .badge{padding:5px 9px}
+/* Portrait felt: a VERTICAL ellipse — the table stands upright in the hand,
+   seats climbing the long rails like a phone-native poker room. */
+.skin-mobile .felt{aspect-ratio:3/4.1;max-width:430px;border-radius:42%/34%;border-width:7px;margin:10px auto}
+.skin-mobile .felt .center{width:88%;top:50%}
+.skin-mobile .board{gap:5px;min-height:56px}
+.skin-mobile .card{width:44px;height:62px;font-size:20px;border-radius:7px}
+.skin-mobile .card.sm{width:32px;height:46px;font-size:14px}
+.skin-mobile .seat{width:96px}
+.skin-mobile .seat .av{width:40px;height:40px;font-size:19px}
+.skin-mobile .seat .hole.many .card.sm{width:22px;height:33px;font-size:11px}
+/* The action bar owns the bottom edge — fixed, blurred, safe-area aware. */
+.skin-mobile .actbar{position:fixed;left:0;right:0;bottom:0;z-index:55;max-width:none;margin:0;
+  border-radius:18px 18px 0 0;border-bottom:none;
+  background:rgba(10,6,6,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  padding:14px max(16px,env(safe-area-inset-left)) calc(14px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-right));
+  box-shadow:0 -8px 30px rgba(0,0,0,.6)}
+.skin-mobile .felt-wrap{padding-bottom:190px}
+.skin-mobile .raise-row{flex-wrap:wrap}
+.skin-mobile .raise-row input[type=range]{width:100%;height:34px;accent-color:var(--pk-scb)}
+/* The dock: primary nav under the thumb. */
+.mb-dock{display:none}
+.skin-mobile .mb-dock{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:rgba(10,6,6,.94);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-top:1px solid rgba(255,36,24,.3);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.mb-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 0;
+  text-decoration:none;color:var(--pk-dim);border-radius:10px}
+.mb-tab .g{font-size:20px;line-height:1}
+.mb-tab .l{font-family:var(--pk-mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase}
+.mb-tab.on{color:var(--pk-scs)}
+.mb-tab.on .g{filter:drop-shadow(0 0 8px rgba(255,36,24,.8))}
+.mb-tab:active{transform:scale(.94)}
+/* Room for the dock at page bottom (table pages pad for the actbar instead). */
+body.skin-mobile #poker-root{padding-bottom:74px}
+.skin-mobile .felt-wrap{margin-bottom:-74px}

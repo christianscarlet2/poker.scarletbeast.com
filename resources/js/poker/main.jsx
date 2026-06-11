@@ -5,6 +5,7 @@ import Felt, { ActionBar } from './Felt.jsx';
 import Marquee, { PHRASES } from './Marquee.jsx';
 import { Card, Board } from './cards.jsx';
 import { UnitProvider, useUnit, Money, usd, dollars } from './money.jsx';
+import { SkinProvider, useSkin, SkinSwitcher, DesktopTitlebar, MobileNav } from './skin.jsx';
 
 /* ----------------------------------------------------- app / window context */
 // "Bare" = a standalone table window: just the felt, no shared chrome.
@@ -82,6 +83,7 @@ function AppBar() {
         {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <SkinSwitcher />
         <button className="badge" title="Toggle cash / big-blind display" onClick={toggle}>{unit === 'bb' ? 'BB' : '$'}</button>
         {me ? (
           <>
@@ -222,6 +224,73 @@ function TableCard({ t }) {
   );
 }
 
+/* -------------------------------------------------------------------- hud */
+// Live PT4-style HUD: poll the per-table stats, honor the on/off preference.
+function useHud(tableId) {
+  const [hud, setHud] = useState(null);
+  const [on, setOn] = useState(() => { try { return localStorage.getItem('sbp_hud') !== 'off'; } catch (e) { return true; } });
+  useEffect(() => {
+    if (!on || !tableId) { setHud(null); return; }
+    const load = () => api.get(`/api/tables/${tableId}/hud`).then(setHud).catch(() => {});
+    load();
+    const iv = setInterval(load, 20000);
+    return () => clearInterval(iv);
+  }, [tableId, on]);
+  const toggle = () => setOn(o => { const n = !o; try { localStorage.setItem('sbp_hud', n ? 'on' : 'off'); } catch (e) {} return n; });
+  return { hud: on ? hud : null, hudOn: on, hudToggle: toggle };
+}
+
+// HUD toggle + (for the logged-in) profile picker and .pt4hud upload.
+function HudControls({ hudOn, hudToggle, onChange }) {
+  const { me } = useMe();
+  const [open, setOpen] = useState(false);
+  const [profiles, setProfiles] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const load = () => api.get('/api/hud/profiles').then(d => { setProfiles(d.profiles); setSelected(d.selected); }).catch(() => {});
+  useEffect(() => { if (open) load(); }, [open]);
+
+  const pick = async (id) => {
+    try { await api.post('/api/hud/select', { profile_id: id }); setSelected(id); setMsg('HUD armed.'); onChange?.(); }
+    catch (e) { setMsg(e.message); }
+  };
+  const up = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    try { await api.post('/api/hud/upload', fd); setMsg('Layout imported.'); load(); onChange?.(); }
+    catch (err) { setMsg(err.message); }
+    e.target.value = '';
+  };
+
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', gap: 6 }}>
+      <button className={`badge${hudOn ? ' gold' : ''}`} title="Toggle the stat overlay" onClick={hudToggle}>HUD {hudOn ? 'ON' : 'OFF'}</button>
+      {me && <button className="badge" title="HUD profiles" onClick={() => setOpen(o => !o)}>⚙</button>}
+      {open && me && (
+        <div className="hud-pop">
+          <div className="hint" style={{ marginBottom: 8 }}>PokerTracker 4 layouts (.pt4hud)</div>
+          {!profiles ? <div className="hint">loading…</div> : profiles.map(p => (
+            <div key={p.id} className="hud-pick" onClick={() => pick(p.id)}>
+              <span>{selected === p.id ? '◉' : '○'} {p.name}</span>
+              {p.user_id !== null && (
+                <button className="badge" onClick={async (e) => { e.stopPropagation(); await api.del(`/api/hud/profiles/${p.id}`); load(); }}>✕</button>
+              )}
+            </div>
+          ))}
+          <label className="btn ghost" style={{ display: 'block', textAlign: 'center', marginTop: 10, cursor: 'pointer' }}>
+            Upload .pt4hud
+            <input type="file" accept=".pt4hud" style={{ display: 'none' }} onChange={up} />
+          </label>
+          {msg && <div className="hint" style={{ marginTop: 6 }}>{msg}</div>}
+        </div>
+      )}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------- table page */
 function TablePage({ id }) {
   const { me, refresh } = useMe();
@@ -230,6 +299,7 @@ function TablePage({ id }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [buyAmt, setBuyAmt] = useState(0);
+  const { hud, hudOn, hudToggle } = useHud(id);
 
   const load = useCallback(() => {
     api.get(`/api/tables/${id}/state`).then(setState).catch(e => setErr(e.message));
@@ -273,10 +343,13 @@ function TablePage({ id }) {
     <div className="wrap felt-wrap">
       <div className="toprow">
         <div>{BARE ? <button className="badge" onClick={exitBare}>{DESKTOP ? '✕ CLOSE' : '← LOBBY'}</button> : <A href="/" className="badge">← LOBBY</A>} <strong style={{ marginLeft: 10 }}>{t.name}</strong> <span className="mono" style={{ color: 'var(--pk-dim)' }}> · {t.game_name ? `${t.game_name} · ` : ''}{usd(t.sb)}/{usd(t.bb)} · {t.type.replace(/_/g, ' ')}</span></div>
-        <div>{me ? <span className="chips-pill">{usd(me.chips)}</span> : <A href="/login" className="btn ghost">Enter to play</A>}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <HudControls hudOn={hudOn} hudToggle={hudToggle} />
+          {me ? <span className="chips-pill">{usd(me.chips)}</span> : <A href="/login" className="btn ghost">Enter to play</A>}
+        </div>
       </div>
 
-      <Felt state={state} mySeat={state.you?.seat_no} />
+      <Felt state={state} mySeat={state.you?.seat_no} hud={hud} />
 
       {me && (
         <ActionBar state={{ ...state, table: { ...t, action_timeout: 25 } }} onAct={act} busy={busy} />
@@ -306,6 +379,7 @@ function TablePage({ id }) {
 function Observe({ id }) {
   const [state, setState] = useState(null);
   const [hands, setHands] = useState([]);
+  const { hud, hudOn, hudToggle } = useHud(id);
   useEffect(() => {
     const load = () => {
       api.get(`/api/tables/${id}/observe`).then(d => setState({ table: d.table, hand: d.hand, you: null })).catch(() => {});
@@ -331,9 +405,12 @@ function Observe({ id }) {
             {t.game_name || ''} · {usd(t.sb)}/{usd(t.bb)}
           </span>
         </div>
-        <TableLink id={id} className="btn ghost">Sit Down</TableLink>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <HudControls hudOn={hudOn} hudToggle={hudToggle} />
+          <TableLink id={id} className="btn ghost">Sit Down</TableLink>
+        </div>
       </div>
-      <Felt state={state} observer />
+      <Felt state={state} observer hud={hud} />
       <Marquee items={PHRASES.machine} cls="hot flush" speed={48} />
 
       <div className="row">
@@ -978,6 +1055,22 @@ function Router() {
   return <div className="wrap"><div className="center-msg">Lost in the void. <A href="/">Return to the lobby.</A></div></div>;
 }
 
+function Chrome() {
+  const router = useNav();
+  const { me } = useMe();
+  const { skin } = useSkin();
+  // The action bar owns the bottom edge at a live felt — the dock yields.
+  const atTable = /^\/tables\/\d+/.test(router.path);
+  return (
+    <>
+      {!BARE && skin === 'desktop' && <DesktopTitlebar />}
+      {!BARE && <AppBar />}
+      <Router />
+      {!BARE && skin === 'mobile' && !atTable && <MobileNav path={router.path} go={router.go} me={me} />}
+    </>
+  );
+}
+
 function App() {
   const router = useRouter();
   const [me, setMe] = useState(null);
@@ -990,8 +1083,9 @@ function App() {
     <Nav.Provider value={router}>
       <Me.Provider value={{ me, refresh }}>
         <UnitProvider>
-          {!BARE && <AppBar />}
-          <Router />
+          <SkinProvider>
+            <Chrome />
+          </SkinProvider>
         </UnitProvider>
       </Me.Provider>
     </Nav.Provider>

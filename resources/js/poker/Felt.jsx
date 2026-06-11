@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Board } from './cards.jsx';
 import { Money, usd, bb } from './money.jsx';
+import { useSkin } from './skin.jsx';
 
 // Seat positions around the oval (percent of felt box), for up to 9 seats,
 // laid out clockwise from bottom-center (the hero seat).
@@ -10,9 +11,18 @@ const SEAT_POS = {
   9: [[50, 93], [20, 88], [6, 56], [12, 22], [34, 7], [66, 7], [88, 22], [94, 56], [80, 88]],
 };
 
-function posFor(maxSeats, seatNo, total) {
+// Portrait ring (mobile skin): the felt is a tall ellipse, so the seats climb
+// the long sides instead of stretching across a wide one. Same clockwise
+// order from the bottom-center hero seat.
+const SEAT_POS_PORTRAIT = {
+  2: [[50, 94], [50, 6]],
+  6: [[50, 94], [10, 71], [10, 28], [50, 6], [90, 28], [90, 71]],
+  9: [[50, 95], [13, 86], [7, 64], [7, 38], [22, 13], [50, 5], [78, 13], [93, 38], [93, 64]],
+};
+
+function posFor(maxSeats, seatNo, portrait) {
   const key = maxSeats <= 2 ? 2 : maxSeats <= 6 ? 6 : 9;
-  const ring = SEAT_POS[key];
+  const ring = (portrait ? SEAT_POS_PORTRAIT : SEAT_POS)[key];
   const idx = (seatNo - 1) % ring.length;
   return ring[idx];
 }
@@ -20,20 +30,56 @@ function posFor(maxSeats, seatNo, total) {
 // Games with no community board (stud + draw families).
 const NO_BOARD = ['stud', 'razz', 'draw5'];
 
-export default function Felt({ state, mySeat, observer }) {
+// PT-style value formatting per computed stat key.
+function hudVal(key, v) {
+  if (v === null || v === undefined) return '–';
+  if (key === 'hands') return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(v);
+  if (key === 'af' || key === 'bb100') return Number(v).toFixed(1);
+  if (key === 'name') return String(v).slice(0, 8);
+  return String(v);
+}
+
+// One seat's HUD chip: the uploaded PT4 layout rows, fed live stats.
+function HudChip({ rows, map, stats }) {
+  if (!stats) return null;
+  return (
+    <div className="hud-chip">
+      {rows.map((row, ri) => (
+        <div key={ri} className="hud-row">
+          {row.map((item, ii) => {
+            const key = map[item.stat];
+            if (!key) return null;            // stat we can't compute — drop
+            const v = hudVal(key, stats[key]);
+            return (
+              <span key={ii} className="hud-it" title={item.stat}>
+                {item.label ? <i>{item.label}</i> : null}{v}
+              </span>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function Felt({ state, mySeat, observer, hud }) {
+  const { skin } = useSkin();
   if (!state || !state.hand) {
     return <div className="center-msg">The felt is dark. Waiting for souls…</div>;
   }
   const h = state.hand;
   const t = state.table;
+  const portrait = skin === 'mobile';
   const game = h.game || t.game || 'nlhe';
   const winners = {};
   (h.winners || []).forEach(w => {
-    // A seat can scoop both halves of a hi-lo pot — accumulate.
+    // A seat can take several pots (side pots, or both halves of a hi-lo
+    // split) — accumulate. "Scoop" only when they dragged BOTH hi and lo.
     const prev = winners[w.seat];
+    const kinds = new Set([...(prev?.kinds || []), w.pot_kind].filter(Boolean));
     winners[w.seat] = prev
-      ? { ...w, amount: prev.amount + w.amount, hand: prev.hand, both: true }
-      : w;
+      ? { ...w, amount: prev.amount + w.amount, hand: prev.hand, kinds, both: kinds.has('hi') && kinds.has('lo') }
+      : { ...w, kinds, both: false };
   });
   const bbc = t.bb;
   const gameTag = t.game_short || (t.game_name ? t.game_name : null);
@@ -48,7 +94,7 @@ export default function Felt({ state, mySeat, observer }) {
         </div>
       </div>
       {Object.values(h.players).map((p) => {
-        const [x, y] = posFor(t.max_seats, p.seat, t.max_seats);
+        const [x, y] = posFor(t.max_seats, p.seat, portrait);
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
         const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
@@ -71,6 +117,9 @@ export default function Felt({ state, mySeat, observer }) {
                 : null}
             </div>
             {p.committed_street > 0 && <div className="bet">bet <Money c={p.committed_street} bbCents={bbc} plain /></div>}
+            {hud && hud.profile && hud.seats && hud.seats[p.seat] && (
+              <HudChip rows={hud.profile.rows} map={hud.map} stats={hud.seats[p.seat]} />
+            )}
             {win && (
               <div className="winner">
                 +<Money c={win.amount} bbCents={bbc} plain />
@@ -89,6 +138,7 @@ export default function Felt({ state, mySeat, observer }) {
 export function ActionBar({ state, onAct, busy }) {
   const h = state.hand;
   const you = state.you;
+  const { skin } = useSkin();
   const [raiseTo, setRaiseTo] = useState(0);
   const [discards, setDiscards] = useState([]); // hole indices marked for the muck
 
@@ -101,6 +151,24 @@ export function ActionBar({ state, onAct, busy }) {
     else if (legal.bet) setRaiseTo(legal.bet.min);
     setDiscards([]);
   }, [h && h.to_act, h && h.street]);
+
+  // War-room hotkeys (desktop skin): F fold · C check/call · R raise/bet.
+  useEffect(() => {
+    if (skin !== 'desktop' || !myTurn || busy) return;
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 'f' && legal.fold) onAct('fold');
+      else if (k === 'c' && (legal.check || legal.call)) onAct(legal.check ? 'check' : 'call');
+      else if (k === 'r' && (legal.raise || legal.bet)) {
+        if (legal.raise) onAct('raise', raiseTo || legal.raise.min_to);
+        else onAct('bet', raiseTo || legal.bet.min);
+      } else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [skin, myTurn, busy, legal.fold, legal.check, legal.call, legal.raise, legal.bet, raiseTo]);
 
   if (!myTurn) {
     return (

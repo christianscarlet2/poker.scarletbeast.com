@@ -22,6 +22,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/hands/{hand}', [PlayController::class, 'hand']);
     Route::get('/players', [PlayController::class, 'players']);
     Route::get('/players/{username}', [PlayController::class, 'playerStats']);
+    Route::get('/tables/{table}/hud', [\App\Http\Controllers\HudController::class, 'table']);
+    Route::get('/hud/profiles', [\App\Http\Controllers\HudController::class, 'index']);
 
     // Authenticated machine play.
     Route::middleware('bot.token')->group(function () {
