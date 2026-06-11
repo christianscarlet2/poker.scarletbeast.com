@@ -7,6 +7,8 @@ import { Card, Board } from './cards.jsx';
 import { UnitProvider, useUnit, Money, usd, dollars } from './money.jsx';
 import { SkinProvider, useSkin, SkinSwitcher, DesktopTitlebar, MobileNav } from './skin.jsx';
 import { STAT_INFO } from './statsInfo.js';
+import { toggleSound, soundMuted } from './sounds.js';
+import { CasinoLobby, CasinoGamePage } from './casino.jsx';
 
 /* ----------------------------------------------------- app / window context */
 // "Bare" = a standalone table window: just the felt, no shared chrome.
@@ -78,6 +80,7 @@ function AppBar() {
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
         <A href="/" className="badge hvm">♠ LOBBY</A>
         <A href="/tournaments" className="badge mo">BRACKETS</A>
+        <A href="/casino" className="badge hvm">PIT</A>
         <A href="/players" className="badge gold">SHARKS</A>
         <a href="/api-docs" className="badge">API</a>
         <a href="/developers" className="badge">DEV</a>
@@ -87,6 +90,7 @@ function AppBar() {
         {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <SoundToggle />
         <SkinSwitcher />
         <button className="badge" title="Toggle cash / big-blind display" onClick={toggle}>{unit === 'bb' ? 'BB' : '$'}</button>
         {me ? (
@@ -193,7 +197,7 @@ function HeroLive({ heroId }) {
         </div>
         <div>
           {heroId
-            ? <Felt state={state} observer />
+            ? <Felt state={state} observer quiet />
             : <div className="center-msg">No live felt yet — the dealer is shuffling.</div>}
         </div>
       </div>
@@ -225,6 +229,23 @@ function TableCard({ t }) {
         <TableLink id={t.id} observe className="btn ghost">Watch</TableLink>
       </div>
     </div>
+  );
+}
+
+/* ----------------------------------------------------------------- casino */
+function CasinoRoute({ game }) {
+  const { me, refresh } = useMe();
+  if (!game) return <CasinoLobby A={A} />;
+  return <CasinoGamePage game={game} me={me} refresh={refresh} A={A} />;
+}
+
+/* ------------------------------------------------------------------ sound */
+function SoundToggle() {
+  const [on, setOn] = useState(!soundMuted());
+  return (
+    <button className="badge" title="Table sounds" onClick={() => setOn(toggleSound())}>
+      {on ? '🔊' : '🔇'}
+    </button>
   );
 }
 
@@ -348,6 +369,7 @@ function TablePage({ id }) {
       <div className="toprow">
         <div>{BARE ? <button className="badge" onClick={exitBare}>{DESKTOP ? '✕ CLOSE' : '← LOBBY'}</button> : <A href="/" className="badge">← LOBBY</A>} <strong style={{ marginLeft: 10 }}>{t.name}</strong> <span className="mono" style={{ color: 'var(--pk-dim)' }}> · {t.game_name ? `${t.game_name} · ` : ''}{usd(t.sb)}/{usd(t.bb)} · {t.type.replace(/_/g, ' ')}</span></div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <SoundToggle />
           <HudControls hudOn={hudOn} hudToggle={hudToggle} />
           {me ? <span className="chips-pill">{usd(me.chips)}</span> : <A href="/login" className="btn ghost">Enter to play</A>}
         </div>
@@ -412,6 +434,7 @@ function Observe({ id }) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <SoundToggle />
           <HudControls hudOn={hudOn} hudToggle={hudToggle} />
           <TableLink id={id} className="btn ghost">Sit Down</TableLink>
         </div>
@@ -1521,6 +1544,8 @@ function Router() {
   if (path === '/players') return <PlayersPage />;
   if (path === '/rewards') return <RewardsPage />;
   if (path === '/stats-guide') return <StatsGuidePage />;
+  if (path === '/casino') return <CasinoRoute />;
+  if ((m = path.match(/^\/casino\/([a-z_]+)/))) return <CasinoRoute game={m[1]} />;
   if (path === '/tournaments') return <TournamentsPage />;
   if ((m = path.match(/^\/tournaments\/(\d+)/))) return <TournamentPage id={m[1]} />;
   if ((m = path.match(/^\/tables\/(\d+)/))) return <TablePage id={m[1]} />;

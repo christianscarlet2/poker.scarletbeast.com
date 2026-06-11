@@ -127,6 +127,27 @@ class PlayController extends Controller
         return response()->json(['hands' => $hands]);
     }
 
+    /**
+     * Secret test fuse: force the NEXT hand on an armed (bomb_freq > 0) felt
+     * to be a bomb pot. Requires the BOMB_TOKEN secret and a live demo mode —
+     * useless in production play. Deliberately undocumented.
+     */
+    public function detonate(Request $request, PokerTable $table)
+    {
+        $token = (string) config('app.bomb_token', '');
+        if ($token === '' || !hash_equals($token, (string) $request->input('token'))) {
+            return response()->json(['error' => 'Nothing here.'], 404);
+        }
+        if (!\App\Services\DemoMode::live()) {
+            return response()->json(['error' => 'The fuse only lights in demo mode.'], 422);
+        }
+        if (($table->bomb_freq ?? 0) <= 0) {
+            return response()->json(['error' => 'This felt is not armed.'], 422);
+        }
+        \Illuminate\Support\Facades\Cache::put("bomb_next:{$table->id}", 1, 600);
+        return response()->json(['ok' => true, 'note' => 'The next hand detonates.']);
+    }
+
     /** The game catalog: every variant the house spreads, as data. */
     public function games(Request $request)
     {

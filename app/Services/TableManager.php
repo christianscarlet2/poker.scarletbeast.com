@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\TableState;
 use App\Models\User;
 use App\Poker\HandEngine;
+use App\Services\DemoMode;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -168,14 +169,19 @@ class TableManager
                 ];
             }
 
+            $nextHand = $table->hand_no + 1;
+            $bombAnte = ($table->bomb_freq ?? 0) > 0 && $nextHand % $table->bomb_freq === 0
+                ? $table->big_blind * max(1, (int) ($table->bomb_ante_bb ?? 5))
+                : 0;
             $engine = HandEngine::begin([
                 'table_id' => $table->id,
-                'hand_no' => $table->hand_no + 1,
+                'hand_no' => $nextHand,
                 'game' => $table->game_type ?? 'nlhe',
                 'sb' => $table->small_blind,
                 'bb' => $table->big_blind,
                 'button' => $button,
                 'players' => $players,
+                'bomb_ante' => $bombAnte,
             ]);
 
             $this->persist($table, $state, $engine);
@@ -245,6 +251,17 @@ class TableManager
         return $this->withLock($table, function (TableState $state) use ($table) {
             // No hand running -> try to start one.
             if (!$this->handInProgress($state)) {
+                // Demo mode (POKER_DEMO=1 in this worker's env): busted machines
+                // re-up from the infinite float between hands — the show never
+                // stops. Humans and tournament felts are never touched.
+                if (DemoMode::on() && !$table->tournament_id) {
+                    Seat::where('table_id', $table->id)
+                        ->where('is_bot', true)
+                        ->whereNotNull('user_id')
+                        ->where(fn ($q) => $q->where('stack', '<', $table->min_buy_in)
+                                             ->orWhere('status', 'sitting_out'))
+                        ->update(['stack' => $table->max_buy_in, 'status' => 'sitting']);
+                }
                 // Brief breath between hands.
                 $last = $state->updated_at;
                 if ($last && $last->diffInMilliseconds(now()) < 1500) {
@@ -330,11 +347,22 @@ class TableManager
                 'stack' => $s->stack,
             ];
         }
+        // Armed felts detonate every Nth hand: forced antes, straight to the
+        // flop. A test fuse (the secret detonate token, demo mode only) can
+        // force the very next hand to blow regardless of the schedule.
+        $nextHand = $table->hand_no + 1;
+        $fuseLit = ($table->bomb_freq ?? 0) > 0
+            && \Illuminate\Support\Facades\Cache::pull("bomb_next:{$table->id}");
+        $bombAnte = (($table->bomb_freq ?? 0) > 0 && $nextHand % $table->bomb_freq === 0) || $fuseLit
+            ? $table->big_blind * max(1, (int) ($table->bomb_ante_bb ?? 5))
+            : 0;
+
         $engine = HandEngine::begin([
-            'table_id' => $table->id, 'hand_no' => $table->hand_no + 1,
+            'table_id' => $table->id, 'hand_no' => $nextHand,
             'game' => $table->game_type ?? 'nlhe',
             'sb' => $table->small_blind, 'bb' => $table->big_blind,
             'button' => $button, 'players' => $players,
+            'bomb_ante' => $bombAnte,
         ]);
         $this->persist($table, $state, $engine);
         $table->increment('hand_no');

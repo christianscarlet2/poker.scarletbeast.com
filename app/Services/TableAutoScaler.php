@@ -7,6 +7,7 @@ use App\Models\Seat;
 use App\Models\Setting;
 use App\Models\Stake;
 use App\Models\User;
+use App\Services\DemoMode;
 
 /**
  * Tends the living ecology of felts. Three jobs:
@@ -109,9 +110,12 @@ class TableAutoScaler
             // to the auto-scaler and spawns an endless hall of clones (the
             // Forge Draw incident); the open seat also invites challengers' bots.
             // human_vs_machine: maintain a couple of bots so a human always has prey.
-            $target = $table->table_type === 'machine_only'
-                ? min($table->max_seats - 1, max($minBots + 2, 5))
-                : min($table->max_seats - 1, $humans > 0 ? $minBots + 1 : $minBots);
+            // Demo mode: pack every machine-eligible felt with 4-6 bots — full show.
+            $target = DemoMode::on()
+                ? DemoMode::botTarget($table->id, $table->max_seats)
+                : ($table->table_type === 'machine_only'
+                    ? min($table->max_seats - 1, max($minBots + 2, 5))
+                    : min($table->max_seats - 1, $humans > 0 ? $minBots + 1 : $minBots));
 
             for ($i = $occupied; $i < $target; $i++) {
                 $bot = $this->idleBot($table);

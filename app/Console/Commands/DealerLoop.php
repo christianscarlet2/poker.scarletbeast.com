@@ -16,11 +16,18 @@ use Illuminate\Console\Command;
  */
 class DealerLoop extends Command
 {
-    protected $signature = 'poker:dealer {--interval=600 : ms between pulses} {--once : single pass}';
+    protected $signature = 'poker:dealer
+        {--interval=600 : ms between pulses}
+        {--once : single pass}
+        {--demo : demo mode — autoscaler packs felts with 4-6 bots}';
     protected $description = 'Drive all live tables by publishing tick jobs to the queue';
 
     public function handle(TableAutoScaler $scaler): int
     {
+        if ($this->option('demo')) {
+            \App\Services\DemoMode::enable();
+            $this->info('DEMO MODE — the machines re-up forever and pack every felt.');
+        }
         $interval = max(150, (int) $this->option('interval'));
         $this->info("Dealer loop online — pulse every {$interval}ms. The felt never sleeps.");
         $beat = 0;
@@ -29,6 +36,9 @@ class DealerLoop extends Command
             $beat++;
             // Every ~3s, let the auto-scaler tend the ecology of tables/bots.
             if ($beat % 5 === 1) {
+                if (\App\Services\DemoMode::on()) {
+                    \App\Services\DemoMode::heartbeat(); // lets HTTP know demo is live
+                }
                 try {
                     $scaler->run();
                 } catch (\Throwable $e) {

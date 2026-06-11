@@ -103,6 +103,22 @@ final class HandEngine
             return $engine;
         }
 
+        // Bomb pot (flop family): everyone antes a forced amount, there is NO
+        // preflop betting, and the hand detonates straight onto the flop.
+        $bombAnte = (int) ($config['bomb_ante'] ?? 0);
+        if ($bombAnte > 0 && $rules['family'] === 'flop') {
+            $engine->dealHole($deck, $rules['hole']);
+            $engine->s['deck'] = Deck::shuffleWithSeed($base, $seed);
+            $engine->s['deck_pos'] = count($seats) * $rules['hole'];
+            $engine->s['bomb'] = true;
+            foreach ($seats as $sn) {
+                $engine->commit($sn, $bombAnte, 'bomb_ante');
+            }
+            $engine->s['current_bet'] = $bombAnte;
+            $engine->closeStreet(); // pulls the antes, deals the flop, seats the action
+            return $engine;
+        }
+
         // Flop and draw families: blinds, hole cards, action left of the blinds.
         $engine->postBlinds();
         $engine->dealHole($deck, $rules['hole']);
@@ -534,7 +550,7 @@ final class HandEngine
         if ($p['stack'] === 0) {
             $p['all_in'] = true;
         }
-        if (in_array($why, ['bet', 'raise', 'call', 'post_sb', 'post_bb', 'bring_in'], true)) {
+        if (in_array($why, ['bet', 'raise', 'call', 'post_sb', 'post_bb', 'bring_in', 'bomb_ante'], true)) {
             $this->log($seat, $why, $amount);
         }
         unset($p);

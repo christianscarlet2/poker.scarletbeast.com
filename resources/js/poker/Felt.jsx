@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Board } from './cards.jsx';
 import { Money, usd, bb } from './money.jsx';
 import { useSkin } from './skin.jsx';
 import { STAT_INFO } from './statsInfo.js';
+import { voiceHandDiff } from './sounds.js';
 
 // Seat positions around the oval (percent of felt box), for up to 9 seats,
 // laid out clockwise from bottom-center (the hero seat).
@@ -40,12 +41,31 @@ function hudVal(key, v) {
   return String(v);
 }
 
+// Chip stack rendered ON the felt for a live street bet — denomination discs
+// scale with the wager, drifting toward the pot from the bettor's seat.
+function FeltChips({ x, y, amount, bbc }) {
+  // Position part-way from the seat toward the table center.
+  const cx = x + (50 - x) * 0.30;
+  const cy = y + (46 - y) * 0.34;
+  const discs = Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, amount / Math.max(1, bbc)) + 1) * 2));
+  return (
+    <div className="felt-chips" style={{ left: `${cx}%`, top: `${cy}%` }}>
+      <span className="stack">
+        {Array.from({ length: discs }, (_, i) => <i key={i} className={`chipd t${(i % 5) + 1}`} style={{ marginTop: i ? -10 : 0 }} />)}
+      </span>
+      <span className="amt"><Money c={amount} bbCents={bbc} plain /></span>
+    </div>
+  );
+}
+
 // One seat's HUD chip: the uploaded PT4 layout rows, fed live stats. Each
 // stat carries a hover codex entry — what it means, and a door to learn more.
-function HudChip({ rows, map, stats }) {
+// `above` flips the chip on top of the seat (lower-rail seats — keeps the HUD
+// on the felt instead of spilling over marquees and action bars below).
+function HudChip({ rows, map, stats, above }) {
   if (!stats) return null;
   return (
-    <div className="hud-chip">
+    <div className={`hud-chip${above ? ' above' : ''}`}>
       {rows.map((row, ri) => (
         <div key={ri} className="hud-row">
           {row.map((item, ii) => {
@@ -72,8 +92,26 @@ function HudChip({ rows, map, stats }) {
   );
 }
 
-export default function Felt({ state, mySeat, observer, hud }) {
+export default function Felt({ state, mySeat, observer, hud, quiet }) {
   const { skin } = useSkin();
+  const [blast, setBlast] = useState(false);
+  // The felt's voice: diff each hand update and play what changed.
+  const prevHand = useRef(null);
+  useEffect(() => {
+    const hand = state?.hand;
+    if (!hand) return;
+    if (!quiet) voiceHandDiff(prevHand.current, hand, mySeat ?? null);
+    // A fresh bomb-pot hand detonates on screen.
+    const isNewHand = !prevHand.current || prevHand.current.hand_no !== hand.hand_no;
+    if (isNewHand && (hand.actions || []).some(a => a.action === 'bomb_ante')) {
+      setBlast(true);
+      const t = setTimeout(() => setBlast(false), 1600);
+      prevHand.current = hand;
+      return () => clearTimeout(t);
+    }
+    prevHand.current = hand;
+  }, [state?.hand?.hand_no, (state?.hand?.actions || []).length, state?.hand?.street, state?.hand?.to_act]);
+
   if (!state || !state.hand) {
     return <div className="center-msg">The felt is dark. Waiting for souls…</div>;
   }
@@ -96,6 +134,13 @@ export default function Felt({ state, mySeat, observer, hud }) {
 
   return (
     <div className="felt">
+      {blast && (
+        <div className="bomb-blast">
+          <span className="b1">💣</span>
+          <span className="b2">💥</span>
+          <span className="b3">BOMB POT</span>
+        </div>
+      )}
       <div className="center">
         {!NO_BOARD.includes(game) && <Board cards={h.board} />}
         <div className="pot">POT · <Money c={h.pot} bbCents={bbc} /></div>
@@ -108,36 +153,47 @@ export default function Felt({ state, mySeat, observer, hud }) {
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
         const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
+        const lower = y > 55; // lower-rail seats flip HUD above, onto the felt
         return (
-          <div
-            key={p.seat}
-            className={`seat${isActor ? ' act' : ''}${p.is_bot ? ' bot' : ''}${p.in_hand ? '' : ' folded'}`}
-            style={{ left: `${x}%`, top: `${y}%` }}
-          >
-            {t.button === p.seat && <div className="dealer">D</div>}
-            <div className="av">{p.avatar || (p.is_bot ? '🤖' : '☠️')}</div>
-            <div className="nm">{p.name}{p.is_bot ? ' ⚙' : ''}</div>
-            <div className="stk"><Money c={p.stack} bbCents={bbc} /></div>
-            <div className={`hole${nCards > 4 ? ' many' : ''}`}>
-              {p.in_hand && p.hole && p.hole.length
-                ? p.hole.map((c, i) => <Card key={i} code={c} sm />)
-                : null}
-              {p.in_hand && p.up && p.up.length
-                ? p.up.map((c, i) => <Card key={`u${i}`} code={c} sm />)
-                : null}
-            </div>
-            {p.committed_street > 0 && <div className="bet">bet <Money c={p.committed_street} bbCents={bbc} plain /></div>}
-            {hud && hud.profile && hud.seats && hud.seats[p.seat] && (
-              <HudChip rows={hud.profile.rows} map={hud.map} stats={hud.seats[p.seat]} />
-            )}
-            {win && (
-              <div className="winner">
-                +<Money c={win.amount} bbCents={bbc} plain />
-                {win.pot_kind && !win.both ? ` ${win.pot_kind.toUpperCase()} ·` : ''}
-                {win.both ? ' SCOOP ·' : ''} {win.hand || 'WINS'}
+          <React.Fragment key={p.seat}>
+            <div
+              className={`seat${isActor ? ' act' : ''}${p.is_bot ? ' bot' : ''}${p.in_hand ? '' : ' folded'}${lower ? ' low' : ' high'}`}
+              style={{ left: `${x}%`, top: `${y}%` }}
+            >
+              <div className="av">{p.avatar || (p.is_bot ? '🤖' : '☠️')}</div>
+              <div className="nm">{p.name}{p.is_bot ? ' ⚙' : ''}</div>
+              <div className="stk"><Money c={p.stack} bbCents={bbc} /></div>
+              <div className={`hole${nCards > 4 ? ' many' : ''}`}>
+                {p.in_hand && p.hole && p.hole.length
+                  ? p.hole.map((c, i) => <Card key={i} code={c} sm />)
+                  : null}
+                {p.in_hand && p.up && p.up.length
+                  ? p.up.map((c, i) => <Card key={`u${i}`} code={c} sm />)
+                  : null}
               </div>
+              {hud && hud.profile && hud.seats && hud.seats[p.seat] && (
+                <HudChip rows={hud.profile.rows} map={hud.map} stats={hud.seats[p.seat]} above={lower} />
+              )}
+              {win && (
+                <div className="winner">
+                  +<Money c={win.amount} bbCents={bbc} plain />
+                  {win.pot_kind && !win.both ? ` ${win.pot_kind.toUpperCase()} ·` : ''}
+                  {win.both ? ' SCOOP ·' : ''} {win.hand || 'WINS'}
+                </div>
+              )}
+            </div>
+            {/* Street wager rides the felt as a chip stack, not seat text. */}
+            {p.committed_street > 0 && (
+              <FeltChips x={x} y={y} amount={p.committed_street} bbc={bbc} />
             )}
-          </div>
+            {/* The dealer puck sits on the felt beside the button seat. */}
+            {h.button === p.seat && (
+              <div className="dealer-puck" style={{
+                left: `${x + (50 - x) * 0.16}%`,
+                top: `${y + (46 - y) * 0.16}%`,
+              }}>D</div>
+            )}
+          </React.Fragment>
         );
       })}
     </div>

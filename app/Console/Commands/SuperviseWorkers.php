@@ -14,7 +14,9 @@ use Symfony\Component\Process\Process;
  */
 class SuperviseWorkers extends Command
 {
-    protected $signature = 'poker:supervise {--poll=5 : seconds between topology checks}';
+    protected $signature = 'poker:supervise
+        {--poll=5 : seconds between topology checks}
+        {--demo : demo mode — workers re-up busted bots from the infinite house float}';
     protected $description = 'Run cpu_count x workers_per_cpu queue workers, scaling to the admin setting';
 
     /** @var array<int,Process> */
@@ -86,12 +88,18 @@ class SuperviseWorkers extends Command
     {
         $php = PHP_BINARY;
         $artisan = base_path('artisan');
-        $proc = new Process([
-            $php, $artisan, 'queue:work', 'rabbitmq',
-            '--queue=poker_default',
-            '--sleep=0', '--tries=1', '--timeout=30', '--max-time=3600',
-            '--name=poker-worker-' . $n,
-        ]);
+        $proc = new Process(
+            [
+                $php, $artisan, 'queue:work', 'rabbitmq',
+                '--queue=poker_default',
+                '--sleep=0', '--tries=1', '--timeout=30', '--max-time=3600',
+                '--name=poker-worker-' . $n,
+            ],
+            null,
+            // Demo mode rides into every worker as an env var — TableManager
+            // reads it at tick time and re-ups busted machines from the float.
+            $this->option('demo') ? ['POKER_DEMO' => '1'] + getenv() : null
+        );
         $proc->setTimeout(null);
         $proc->start(function ($type, $buffer) {
             // Surface worker output sparingly.

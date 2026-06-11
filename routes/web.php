@@ -31,6 +31,8 @@ Route::get('/tournaments', $spa);
 Route::get('/tournaments/{tournament}', $spa)->whereNumber('tournament');
 Route::get('/stats-guide', $spa);
 Route::get('/rewards', $spa);
+Route::get('/casino', $spa);
+Route::get('/casino/{game}', $spa)->where('game', '[a-z_]+');
 
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
@@ -95,6 +97,8 @@ Route::prefix('api')->group(function () {
     Route::get('/tournaments', [\App\Http\Controllers\TournamentController::class, 'index']);
     Route::get('/tournaments/{tournament}', [\App\Http\Controllers\TournamentController::class, 'show']);
     Route::get('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'sheet']);
+    // Secret test fuse — token-gated, demo-mode only, undocumented.
+    Route::post('/tables/{table}/detonate', [PlayController::class, 'detonate']);
 });
 
 /* -------------------------------------------- authenticated player (web) */
@@ -122,6 +126,11 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/rewards/redeem', [\App\Http\Controllers\RewardsController::class, 'redeem']);
 
     Route::post('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'place']);
+
+    Route::get('/casino/{game}', [\App\Http\Controllers\CasinoController::class, 'state']);
+    Route::post('/casino/play', [\App\Http\Controllers\CasinoController::class, 'play']);
+    Route::post('/casino/start', [\App\Http\Controllers\CasinoController::class, 'start']);
+    Route::post('/casino/act', [\App\Http\Controllers\CasinoController::class, 'act']);
 });
 
 /* ------------------------------------------------------------- the altar */

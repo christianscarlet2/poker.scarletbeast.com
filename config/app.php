@@ -15,6 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'bomb_token' => env('BOMB_TOKEN', ''),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

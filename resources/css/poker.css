@@ -91,8 +91,37 @@ label{display:block;font-family:var(--pk-mono);font-size:11px;letter-spacing:.12
 .badge.gold{color:var(--pk-gold);border-color:rgba(216,178,90,.4)}
 .seat.folded{opacity:.34}
 .seat .bet{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs);margin-top:3px}
-.seat .dealer{position:absolute;top:-6px;right:8px;width:18px;height:18px;border-radius:50%;
-  background:var(--pk-bone);color:#111;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+/* The dealer puck — a proper casino button resting on the felt. */
+.dealer-puck{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #fff, var(--pk-bone) 60%, #c9c2b4);color:#111;
+  font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 7px rgba(0,0,0,.65), inset 0 -2px 3px rgba(0,0,0,.25);z-index:4;
+  font-family:var(--pk-sans)}
+/* Bomb pot detonation — the felt shakes, the bomb drops, the pot erupts. */
+.bomb-blast{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:none;
+  animation:bombshake .5s ease-in-out 2}
+.bomb-blast .b1{font-size:64px;animation:bombdrop .45s cubic-bezier(.55,0,1,.45) forwards}
+.bomb-blast .b2{position:absolute;font-size:120px;opacity:0;animation:bombboom 1.1s ease-out .42s forwards}
+.bomb-blast .b3{position:absolute;margin-top:120px;font-family:var(--pk-mono);font-weight:800;
+  font-size:26px;letter-spacing:.5em;color:var(--pk-gold);opacity:0;text-shadow:0 0 24px rgba(225,6,0,.9);
+  animation:bombtext 1.1s ease-out .5s forwards}
+@keyframes bombdrop{from{transform:translateY(-220px) rotate(-30deg);opacity:1}to{transform:translateY(10px) rotate(8deg);opacity:1}}
+@keyframes bombboom{0%{opacity:0;transform:scale(.2)}18%{opacity:1;transform:scale(1.5)}100%{opacity:0;transform:scale(2.4)}}
+@keyframes bombtext{0%{opacity:0;transform:scale(.6)}25%{opacity:1;transform:scale(1.08)}80%{opacity:1}100%{opacity:0;transform:scale(1)}}
+@keyframes bombshake{0%,100%{transform:translate(0,0)}20%{transform:translate(-7px,3px)}40%{transform:translate(6px,-4px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,3px)}}
+
+/* Wagered chips on the felt: stacked denomination discs + the amount. */
+.felt-chips{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:5px;z-index:4}
+.felt-chips .stack{display:flex;flex-direction:column-reverse;align-items:center}
+.felt-chips .chipd{width:16px;height:16px;border-radius:50%;display:block;
+  border:2.5px dashed rgba(255,255,255,.75);box-shadow:0 2px 4px rgba(0,0,0,.6)}
+.felt-chips .chipd.t1{background:#b8b4ab}.felt-chips .chipd.t2{background:#c01616}
+.felt-chips .chipd.t3{background:#1f7a4d}.felt-chips .chipd.t4{background:#1a1a1c}
+.felt-chips .chipd.t5{background:var(--pk-gold)}
+.felt-chips .amt{font-family:var(--pk-mono);font-size:10.5px;color:var(--pk-gold);
+  background:rgba(5,4,4,.7);padding:1px 6px;border-radius:8px;white-space:nowrap}
+.skin-mobile .felt-chips .chipd{width:13px;height:13px}
 .seat .winner{color:var(--pk-gold);font-family:var(--pk-mono);font-size:10px;letter-spacing:.1em}
 .actbar{max-width:920px;margin:0 auto;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;
   padding:16px;border:1px solid rgba(255,36,24,.25);border-radius:14px;background:#0a0707}
@@ -132,6 +161,12 @@ table.tbl th{color:var(--pk-scs);text-transform:uppercase;letter-spacing:.1em;fo
 .hud-it:last-child{margin-right:0}
 .hud-it i{font-style:normal;color:var(--pk-dim);margin-right:1px}
 .hud-it i::after{content:':'}
+/* Lower-rail seats wear the HUD above the seat box, so it stays on the felt
+   instead of spilling over marquees / action bars beneath the table. */
+.seat .hud-chip{position:relative;z-index:6}
+.seat .hud-chip.above{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);margin:0}
+/* Upper-rail seats open stat tooltips DOWNWARD (clear of titlebar/top edge). */
+.seat.high .hud-tip{bottom:auto;top:calc(100% + 6px)}
 .skin-mobile .hud-chip{font-size:8px;max-width:120px;padding:2px 5px}
 .skin-desktop .hud-chip{border-radius:2px}
 .hud-pop{position:absolute;right:0;top:30px;z-index:80;width:280px;background:#0c0808;
