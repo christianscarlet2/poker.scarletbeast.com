@@ -75,9 +75,37 @@
         <div class="ep"><span class="verb get">GET</span> <code>/hands/{id}</code></div>
         <p>Full archived record of one hand: seats, action log, board, showdown hole cards, winners, rake. No auth.</p>
 
+        <div class="ep"><span class="verb get">GET</span> <code>/games</code></div>
+        <p>The game catalog as data: every variant's family (flop/stud/draw), hole-card count,
+        betting structure, deck size, hi-lo rules, and seat caps. Teach your bot the rules it's about to play.</p>
+
         <div class="ep"><span class="verb get">GET</span> <code>/players</code> · <code>/players/{username}</code></div>
         <p>The shark ledger: lifetime profit leaderboard, and any player's full dossier — profit curve,
         bb/100, VPIP, showdown record, per-game breakdown. No auth. Scout your prey.</p>
+
+        <div class="ep"><span class="verb get">GET</span> <code>/tables/{id}/hud</code> · <code>/hud/profiles</code></div>
+        <p>Live <strong>HUD variables</strong> for every seated player at a felt — VPIP, PFR, AF, 3-bet,
+        c-bet lines, WTSD/W$SD/WWSF, bb/100 — plus the active PokerTracker layout. The same numbers the
+        on-site HUD overlays. Authenticated users can <code>POST /hud/upload</code> (web session) a
+        <code>.pt4hud</code> layout export and <code>POST /hud/select</code> it. Definitions live at
+        <a href="/stats-guide">/stats-guide</a>.</p>
+
+        <div class="ep"><span class="verb get">GET</span> <code>/tournaments</code> · <code>/tournaments/{id}</code></div>
+        <p><strong>Tournament status</strong>: schedule, live brackets, blind level + ladder, entrants with
+        live stacks, finishing places, prize pool and payouts. With a key:
+        <code>POST /tournaments/{id}/register</code> and <code>/unregister</code> — yes, your bot can enter
+        a bracket and try to take the whole pool.</p>
+
+        <div class="ep"><span class="verb get">GET</span> <code>/tables/{id}/sidebets</code> <span class="verb post" style="margin-left:6px">POST</span> <span class="auth">key for POST</span></div>
+        <p>The rail's bookmaker: live markets on the current hand (pick the winner at
+        field-size odds, flop color, paired flop, reaches-showdown), odds locked at placement,
+        settled from your bankroll the moment the hand completes. Body:
+        <code>{ "type": "winner", "selection": "3", "amount": 100 }</code>.</p>
+
+        <div class="ep"><span class="verb get">GET</span> <code>/rewards</code> <span class="verb post" style="margin-left:6px">POST</span> <code>/rewards/claim</code> · <code>/rewards/redeem</code> <span class="auth">key</span></div>
+        <p>Rakeback and affiliate balances (claim them into your bankroll), your referral link, and
+        bonus-code redemption: <code>{ "code": "WELCOME666" }</code>. The house returns a slice of every
+        cent of rake you pay; your recruits feed you forever.</p>
 
         <div class="ep"><span class="verb get">GET</span> <code>/tables/{id}</code> <span class="auth">key</span></div>
         <p>Your seat's full view — including <strong>your</strong> hole cards and the <code>legal</code> actions available right now. Poll this; act when <code>hand.to_act</code> equals your <code>you.seat_no</code>.</p>

@@ -21,6 +21,7 @@ class AuthController extends Controller
             'username' => ['required', 'string', 'min:3', 'max:24', 'regex:/^[A-Za-z0-9_]+$/', Rule::unique('users', 'username')],
             'email' => ['nullable', 'email', Rule::unique('users', 'email')],
             'password' => ['required', 'string', 'min:8'],
+            'code' => ['nullable', 'string', 'max:32'], // bonus code OR referral code
         ]);
 
         $user = User::create([
@@ -31,6 +32,21 @@ class AuthController extends Controller
             'chips' => 0,
             'avatar' => $this->randomGlyph(),
         ]);
+        \App\Services\Rewards::ensureCode($user);
+
+        // One field, two doors: a signup code may be an affiliate's referral
+        // code or a bonus promo — try both, in that order. Silent on miss so
+        // a bad code never blocks an enlistment.
+        $code = trim((string) ($data['code'] ?? ($request->query('ref') ?: '')));
+        if ($code !== '') {
+            if (!\App\Services\Rewards::attachReferral($user, $code)) {
+                try {
+                    \App\Services\Rewards::redeem($user, $code);
+                } catch (\Throwable $e) {
+                    // not a bonus either — let it go
+                }
+            }
+        }
 
         Auth::login($user, true);
         $request->session()->regenerate();

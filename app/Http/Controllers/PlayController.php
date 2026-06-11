@@ -127,6 +127,28 @@ class PlayController extends Controller
         return response()->json(['hands' => $hands]);
     }
 
+    /** The game catalog: every variant the house spreads, as data. */
+    public function games(Request $request)
+    {
+        $games = [];
+        foreach (\App\Poker\GameType::GAMES as $id => $g) {
+            $games[] = [
+                'id' => $id,
+                'name' => $g['name'],
+                'short' => $g['short'],
+                'family' => $g['family'],
+                'hole_cards' => $g['family'] === 'stud' ? 7 : $g['hole'],
+                'use_exactly' => $g['use_exactly'],
+                'betting' => $g['betting'],
+                'deck' => $g['deck'] === 'short' ? 36 : 52,
+                'hi_lo_split' => $g['lo'] !== null && $g['hi'],
+                'lowball' => $g['lo'] !== null && !$g['hi'],
+                'max_seats' => \App\Poker\GameType::maxSeats($id),
+            ];
+        }
+        return response()->json(['games' => $games]);
+    }
+
     /** Sharkscope-style leaderboard: every player ranked by lifetime profit. */
     public function players(Request $request, \App\Services\PlayerStats $stats)
     {

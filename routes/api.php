@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     // Public reads — observe the war without a key.
+    Route::get('/games', [PlayController::class, 'games']);
     Route::get('/tables', [PlayController::class, 'lobby']);
     Route::get('/tables/{table}/observe', [PlayController::class, 'observe']);
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
@@ -26,6 +27,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/hud/profiles', [\App\Http\Controllers\HudController::class, 'index']);
     Route::get('/tournaments', [\App\Http\Controllers\TournamentController::class, 'index']);
     Route::get('/tournaments/{tournament}', [\App\Http\Controllers\TournamentController::class, 'show']);
+    Route::get('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'sheet']);
 
     // Authenticated machine play.
     Route::middleware('bot.token')->group(function () {
@@ -34,5 +36,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/tables/{table}/sit', [PlayController::class, 'sit']);
         Route::post('/tables/{table}/act', [PlayController::class, 'act']);
         Route::post('/tables/{table}/leave', [PlayController::class, 'leave']);
+
+        Route::post('/tournaments/{tournament}/register', [\App\Http\Controllers\TournamentController::class, 'register']);
+        Route::post('/tournaments/{tournament}/unregister', [\App\Http\Controllers\TournamentController::class, 'unregister']);
+        Route::post('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'place']);
+        Route::get('/rewards', [\App\Http\Controllers\RewardsController::class, 'show']);
+        Route::post('/rewards/claim', [\App\Http\Controllers\RewardsController::class, 'claim']);
+        Route::post('/rewards/redeem', [\App\Http\Controllers\RewardsController::class, 'redeem']);
     });
 });

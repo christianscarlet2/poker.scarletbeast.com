@@ -393,6 +393,23 @@ class TableManager
             }
         }
 
+        // Rakeback + affiliate accrual: the moment the house takes a drop,
+        // the rewarded slices are credited (humans only; bots feed the house).
+        if ($rake > 0 && !empty($rakeMap)) {
+            $userRake = [];
+            foreach ($rakeMap as $seatNo => $amt) {
+                $uid = $s['players'][$seatNo]['user_id'] ?? null;
+                if ($uid && $amt > 0) {
+                    $userRake[$uid] = ($userRake[$uid] ?? 0) + $amt;
+                }
+            }
+            try {
+                Rewards::accrueFromRake($userRake);
+            } catch (\Throwable $e) {
+                // rewards must never break a hand settlement
+            }
+        }
+
         // Push final engine stacks (minus any rake) back onto the seats.
         foreach ($s['players'] as $seatNo => $p) {
             $net = $p['stack'] - ($rakeMap[$seatNo] ?? 0);
@@ -426,6 +443,13 @@ class TableManager
                 }
             }
         }
+        // The rail's wagers ride on this hand — settle them with it.
+        try {
+            SideBets::settle($table, $s);
+        } catch (\Throwable $e) {
+            // a bookmaking hiccup must never break the hand itself
+        }
+
         Hand::create([
             'table_id' => $table->id,
             'game_type' => $s['game'] ?? 'nlhe',

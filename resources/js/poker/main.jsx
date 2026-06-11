@@ -83,6 +83,7 @@ function AppBar() {
         <a href="/developers" className="badge">DEV</a>
         <a href="/download" className="badge">GET APP</a>
         {me && <A href="/wallet" className="badge ho">VAULT</A>}
+        {me && <A href="/rewards" className="badge gold">TRIBUTE</A>}
         {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -374,6 +375,8 @@ function TablePage({ id }) {
         {t.type === 'machine_only' && <span className="mono" style={{ color: 'var(--pk-dim)' }}>Machine-only felt — observe the silicon, or send a bot via the API.</span>}
       </div>
       {err && <div className="err" style={{ textAlign: 'center' }}>{err}</div>}
+
+      <SideBetsPanel tableId={id} />
     </div>
   );
 }
@@ -415,6 +418,8 @@ function Observe({ id }) {
       </div>
       <Felt state={state} observer hud={hud} />
       <Marquee items={PHRASES.machine} cls="hot flush" speed={48} />
+
+      <SideBetsPanel tableId={id} />
 
       <div className="row">
         <div className="panel">
@@ -722,6 +727,212 @@ function PlayersPage() {
   );
 }
 
+/* -------------------------------------------------------------- side bets */
+// The rail's bookmaker window: live markets on the current hand.
+function SideBetsPanel({ tableId }) {
+  const { me, refresh } = useMe();
+  const [sheet, setSheet] = useState(null);
+  const [amt, setAmt] = useState(100);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const load = () => api.get(`/api/tables/${tableId}/sidebets`).then(setSheet).catch(() => {});
+    load();
+    const iv = setInterval(load, 3000);
+    return () => clearInterval(iv);
+  }, [tableId]);
+
+  const place = async (type, selection) => {
+    setMsg(''); setErr('');
+    try {
+      const r = await api.post(`/api/tables/${tableId}/sidebets`, { type, selection, amount: amt });
+      setMsg(`Locked: ${type} ${selection} @ ${(r.bet.odds_x100 / 100).toFixed(2)}x`);
+      await refresh();
+    } catch (e) { setErr(e.message); }
+  };
+
+  if (!sheet) return null;
+  const open = (sheet.mine || []).filter(b => b.status === 'open');
+  const settled = (sheet.mine || []).filter(b => b.status !== 'open').slice(0, 6);
+
+  return (
+    <div className="panel">
+      <h2>🎲 Side Bets <span className="mono" style={{ fontSize: 11, color: 'var(--pk-dim)' }}>· odds lock when you fire · paid from your bankroll</span></h2>
+      {(!sheet.offers || sheet.offers.length === 0) ? (
+        <div className="hint">Markets open when the next hand is dealt…</div>
+      ) : (
+        <>
+          {me && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <span className="mono" style={{ color: 'var(--pk-gold)' }}>stake $</span>
+              <input style={{ width: 90 }} type="number" step="0.10" min="0.10" value={(amt / 100).toFixed(2)}
+                onChange={e => setAmt(Math.max(10, Math.round(+e.target.value * 100)))} />
+            </div>
+          )}
+          {sheet.offers.map(o => (
+            <div key={o.type} style={{ margin: '8px 0' }}>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--pk-dim)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 5 }}>
+                {o.label} · pays {(o.odds_x100 / 100).toFixed(2)}x
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {o.selections.map(s => (
+                  <button key={s.key} className="btn ghost" disabled={!me}
+                    title={me ? `Bet ${usd(amt)} on ${s.label}` : 'Sign in to bet'}
+                    onClick={() => place(o.type, s.key)}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!me && <div className="hint"><A href="/login">Enter</A> to bet the rail.</div>}
+        </>
+      )}
+      {open.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {open.map(b => <div key={b.id} className="kv"><span>⏳ {b.bet_type} {b.selection} · hand #{b.hand_no}</span><span>{usd(b.stake)} @ {(b.odds_x100 / 100).toFixed(2)}x</span></div>)}
+        </div>
+      )}
+      {settled.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          {settled.map(b => (
+            <div key={b.id} className="kv" style={{ opacity: .75 }}>
+              <span>{b.status === 'won' ? '🏆' : b.status === 'void' ? '↩' : '💀'} {b.bet_type} {b.selection} · #{b.hand_no}</span>
+              <span style={{ color: b.status === 'won' ? 'var(--pk-gold)' : 'var(--pk-dim)' }}>
+                {b.status === 'won' ? `+${usd(b.payout)}` : b.status === 'void' ? 'push' : `-${usd(b.stake)}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {msg && <div className="ok">{msg}</div>}
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- rewards */
+function RewardsPage() {
+  const { me, refresh } = useMe();
+  const [d, setD] = useState(null);
+  const [code, setCode] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const load = () => api.get('/api/rewards').then(setD).catch(e => setErr(e.message));
+  useEffect(() => { if (me) load(); }, [me]);
+
+  if (!me) return <div className="wrap"><div className="center-msg">Enter first. <A href="/login">Sign in.</A></div></div>;
+  if (!d) return <div className="wrap"><div className="center-msg">{err || 'Tallying your tribute…'}</div></div>;
+
+  const claim = async (kind) => {
+    setMsg(''); setErr('');
+    try { const r = await api.post('/api/rewards/claim', { kind }); setMsg(`Claimed ${usd(r.claimed)} — it's in your bankroll.`); await refresh(); load(); }
+    catch (e) { setErr(e.message); }
+  };
+  const redeem = async (e) => {
+    e.preventDefault(); setMsg(''); setErr('');
+    try { const r = await api.post('/api/rewards/redeem', { code }); setMsg(`Code drank: +${usd(r.credited)}.`); setCode(''); await refresh(); load(); }
+    catch (e2) { setErr(e2.message); }
+  };
+  const copy = () => { navigator.clipboard?.writeText(d.affiliate.link); setMsg('Link copied — go recruit.'); };
+
+  return (
+    <div className="wrap">
+      <div className="toprow"><h2 style={{ margin: 0 }}>The Tribute</h2><span className="mono" style={{ color: 'var(--pk-dim)' }}>rakeback · recruits · bonus blood</span></div>
+
+      <div className="row">
+        <div className="panel">
+          <h2>🩸 Rakeback</h2>
+          <div className="hint">The house returns {d.rakeback.pct}% of every cent of rake you pay. It pools here — claim it to your bankroll whenever.</div>
+          <div className="kv"><span>Accrued, unclaimed</span><span>{usd(d.rakeback.accrued)}</span></div>
+          <div className="kv"><span>Lifetime earned</span><span>{usd(d.rakeback.lifetime)}</span></div>
+          <button className="btn gold big" style={{ marginTop: 14, width: '100%' }} disabled={!d.rakeback.accrued} onClick={() => claim('rakeback')}>
+            Claim {usd(d.rakeback.accrued)}
+          </button>
+        </div>
+
+        <div className="panel">
+          <h2>🕸 The Affiliate Web</h2>
+          <div className="hint">Recruit souls with your link. You earn {d.affiliate.pct}% of all rake they ever pay — forever.</div>
+          <div className="addr" style={{ cursor: 'pointer' }} onClick={copy} title="Click to copy">{d.affiliate.link}</div>
+          <div className="kv"><span>Recruits</span><span>{d.affiliate.recruits.length}</span></div>
+          <div className="kv"><span>Accrued, unclaimed</span><span>{usd(d.affiliate.accrued)}</span></div>
+          <div className="kv"><span>Lifetime earned</span><span>{usd(d.affiliate.lifetime)}</span></div>
+          <button className="btn gold big" style={{ marginTop: 14, width: '100%' }} disabled={!d.affiliate.accrued} onClick={() => claim('affiliate')}>
+            Claim {usd(d.affiliate.accrued)}
+          </button>
+          {d.affiliate.recruits.length > 0 && (
+            <table className="tbl" style={{ marginTop: 12 }}>
+              <thead><tr><th>Recruit</th><th>Since</th></tr></thead>
+              <tbody>{d.affiliate.recruits.map(r => <tr key={r.username}><td>{r.avatar} {r.username}</td><td className="mono">{r.since}</td></tr>)}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>🎁 Bonus Codes</h2>
+        <div className="hint">Got a code? Speak it. Each one pays once.</div>
+        <form onSubmit={redeem} style={{ display: 'flex', gap: 10, maxWidth: 420 }}>
+          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="BONUS-CODE" />
+          <button className="btn" disabled={!code}>Redeem</button>
+        </form>
+        {d.bonuses.length > 0 && (
+          <table className="tbl" style={{ marginTop: 12 }}>
+            <thead><tr><th>Code</th><th>Promo</th><th>Paid</th><th>When</th></tr></thead>
+            <tbody>{d.bonuses.map((b, i) => <tr key={i}><td className="mono">{b.code}</td><td>{b.name}</td><td style={{ color: 'var(--pk-gold)' }}>+{usd(b.amount)}</td><td className="mono">{b.when}</td></tr>)}</tbody>
+          </table>
+        )}
+      </div>
+      {msg && <div className="ok">{msg}</div>}
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
+}
+
+// Warden promo mint, mounted on the altar.
+function BonusAdminPanel() {
+  const [d, setD] = useState(null);
+  const [f, setF] = useState({ code: '', name: '', amount: 2500, max_claims: 100, expires_at: '' });
+  const [msg, setMsg] = useState('');
+  const load = () => api.get('/api/admin/bonuses').then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const save = async () => {
+    setMsg('');
+    try { await api.post('/api/admin/bonuses', { ...f, expires_at: f.expires_at || null }); setMsg('Promo minted.'); load(); }
+    catch (e) { setMsg(e.message); }
+  };
+  if (!d) return null;
+  return (
+    <div className="panel">
+      <h2>Promo Mint</h2>
+      <div className="hint">Bonus codes redeemable at signup or in The Tribute. Rakeback {d.rakeback_bps / 100}% · affiliate {d.affiliate_bps / 100}% (tune in house rules above).</div>
+      <table className="tbl">
+        <thead><tr><th>Code</th><th>Promo</th><th>Pays</th><th>Claims</th><th>On</th></tr></thead>
+        <tbody>
+          {d.codes.map(c => (
+            <tr key={c.id}>
+              <td className="mono">{c.code}</td><td>{c.name}</td><td>{usd(c.amount)}</td>
+              <td>{c.claims}{c.max_claims ? `/${c.max_claims}` : ''}</td>
+              <td><button className="badge" onClick={async () => { await api.post(`/api/admin/bonuses/${c.id}/toggle`); load(); }}>{c.enabled ? 'on' : 'off'}</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="row" style={{ marginTop: 8 }}>
+        <div><label>Code</label><input value={f.code} onChange={e => setF({ ...f, code: e.target.value.toUpperCase() })} placeholder="BLOODMOON" /></div>
+        <div><label>Name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Blood Moon Promo" /></div>
+        <div><label>Pays ($)</label><input type="number" step="0.01" value={(f.amount / 100).toFixed(2)} onChange={e => setF({ ...f, amount: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Max claims (0=∞)</label><input type="number" value={f.max_claims} onChange={e => setF({ ...f, max_claims: +e.target.value })} /></div>
+        <div><label>Expires (optional)</label><input type="datetime-local" value={f.expires_at} onChange={e => setF({ ...f, expires_at: e.target.value })} /></div>
+      </div>
+      <button className="btn" style={{ marginTop: 10 }} onClick={save}>Mint code</button>
+      {msg && <div className="ok">{msg}</div>}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------ stats guide */
 function StatsGuidePage() {
   useEffect(() => {
@@ -974,7 +1185,10 @@ function TournamentAdminPanel() {
 function AuthPage({ mode }) {
   const { refresh } = useMe();
   const { go } = useNav();
-  const [f, setF] = useState({ username: '', email: '', password: '' });
+  const [f, setF] = useState({
+    username: '', email: '', password: '',
+    code: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('ref')) || '',
+  });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [twofa, setTwofa] = useState(null); const [code, setCode] = useState(''); const [qr, setQr] = useState('');
@@ -1026,6 +1240,8 @@ function AuthPage({ mode }) {
           {mode === 'register' && <>
             <label>Email (optional)</label>
             <input value={f.email} onChange={e => setF({ ...f, email: e.target.value })} />
+            <label>Bonus / referral code (optional)</label>
+            <input value={f.code} onChange={e => setF({ ...f, code: e.target.value.toUpperCase() })} placeholder="WELCOME666" />
           </>}
           <label>Password</label>
           <input type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
@@ -1188,6 +1404,7 @@ function Admin() {
 
       <SettingsPanel settings={d.settings} onSave={saveSettings} />
       <TournamentAdminPanel />
+      <BonusAdminPanel />
       <StakesPanel stakes={d.stakes} gameTypes={d.game_types} onChange={load} />
       <WithdrawalsPanel rows={d.pending_withdrawals} onChange={load} />
       {msg && <div className="ok">{msg}</div>}
@@ -1208,6 +1425,8 @@ function SettingsPanel({ settings, onSave }) {
         <div><label>Workers per CPU</label><input type="number" {...f('workers_per_cpu')} /></div>
         <div><label>Action timeout (s)</label><input type="number" {...f('action_timeout')} /></div>
         <div><label>Rake (bps)</label><input type="number" {...f('rake_bps')} /></div>
+        <div><label>Rakeback (bps)</label><input type="number" {...f('rakeback_bps')} /></div>
+        <div><label>Affiliate (bps)</label><input type="number" {...f('affiliate_bps')} /></div>
         <div><label>Min bots / table</label><input type="number" {...f('min_bots_per_table')} /></div>
         <div><label>Bot think min (ms)</label><input type="number" {...f('bot_think_min')} /></div>
         <div><label>Bot think max (ms)</label><input type="number" {...f('bot_think_max')} /></div>
@@ -1300,6 +1519,7 @@ function Router() {
   if (path === '/admin') return <Admin />;
   let m;
   if (path === '/players') return <PlayersPage />;
+  if (path === '/rewards') return <RewardsPage />;
   if (path === '/stats-guide') return <StatsGuidePage />;
   if (path === '/tournaments') return <TournamentsPage />;
   if ((m = path.match(/^\/tournaments\/(\d+)/))) return <TournamentPage id={m[1]} />;

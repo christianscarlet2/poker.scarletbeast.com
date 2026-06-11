@@ -30,6 +30,7 @@ Route::get('/player/{username}', $spa);
 Route::get('/tournaments', $spa);
 Route::get('/tournaments/{tournament}', $spa)->whereNumber('tournament');
 Route::get('/stats-guide', $spa);
+Route::get('/rewards', $spa);
 
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
@@ -93,6 +94,7 @@ Route::prefix('api')->group(function () {
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
     Route::get('/tournaments', [\App\Http\Controllers\TournamentController::class, 'index']);
     Route::get('/tournaments/{tournament}', [\App\Http\Controllers\TournamentController::class, 'show']);
+    Route::get('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'sheet']);
 });
 
 /* -------------------------------------------- authenticated player (web) */
@@ -114,6 +116,12 @@ Route::prefix('api')->middleware('auth')->group(function () {
 
     Route::post('/tournaments/{tournament}/register', [\App\Http\Controllers\TournamentController::class, 'register']);
     Route::post('/tournaments/{tournament}/unregister', [\App\Http\Controllers\TournamentController::class, 'unregister']);
+
+    Route::get('/rewards', [\App\Http\Controllers\RewardsController::class, 'show']);
+    Route::post('/rewards/claim', [\App\Http\Controllers\RewardsController::class, 'claim']);
+    Route::post('/rewards/redeem', [\App\Http\Controllers\RewardsController::class, 'redeem']);
+
+    Route::post('/tables/{table}/sidebets', [\App\Http\Controllers\SideBetController::class, 'place']);
 });
 
 /* ------------------------------------------------------------- the altar */
@@ -130,4 +138,8 @@ Route::prefix('api/admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('/tournaments/{tournament}/start', [\App\Http\Controllers\TournamentController::class, 'start']);
     Route::post('/tournaments/{tournament}/cancel', [\App\Http\Controllers\TournamentController::class, 'cancel']);
     Route::post('/tournaments/{tournament}/fill-bots', [\App\Http\Controllers\TournamentController::class, 'fillBots']);
+
+    Route::get('/bonuses', [\App\Http\Controllers\RewardsController::class, 'adminIndex']);
+    Route::post('/bonuses', [\App\Http\Controllers\RewardsController::class, 'adminStore']);
+    Route::post('/bonuses/{code}/toggle', [\App\Http\Controllers\RewardsController::class, 'adminToggle']);
 });

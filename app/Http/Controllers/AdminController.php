@@ -50,6 +50,8 @@ class AdminController extends Controller
             'action_timeout' => ['nullable', 'integer', 'min:5', 'max:120'],
             'rake_bps' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'rake_cap_bb' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'rakeback_bps' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'affiliate_bps' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'min_bots_per_table' => ['nullable', 'integer', 'min:0', 'max:8'],
             'bot_think_min' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'bot_think_max' => ['nullable', 'integer', 'min:0', 'max:20000'],
