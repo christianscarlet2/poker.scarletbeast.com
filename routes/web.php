@@ -27,6 +27,8 @@ Route::get('/observe/{table}', $spa)->whereNumber('table');
 Route::get('/replay/{hand}', $spa)->whereNumber('hand');
 Route::get('/players', $spa);
 Route::get('/player/{username}', $spa);
+Route::get('/tournaments', $spa);
+Route::get('/tournaments/{tournament}', $spa)->whereNumber('tournament');
 
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
@@ -35,6 +37,41 @@ Route::view('/docs', 'apidocs');
 // Native app downloads (desktop + mobile clients).
 Route::view('/download', 'download');
 Route::view('/downloads', 'download');
+
+// Developers hub — open-source repos (with live recent commits) + API docs.
+$developers = function () {
+    $owner = 'christianscarlet2';
+    $defs = [
+        ['repo' => 'poker.scarletbeast.com',      'label' => 'The Felt',       'icon' => '🎰', 'tech' => 'Laravel · React',     'blurb' => 'The whole house — provably-fair engine, heuristic bot brain, table autoscaler, crypto custody, and the public REST API.'],
+        ['repo' => 'scarletbeast-poker-desktop',   'label' => 'Desktop Client', 'icon' => '🖥️', 'tech' => 'Electron',            'blurb' => 'Windows, macOS & Linux desktop shell — a hardened window onto the live felt.'],
+        ['repo' => 'scarletbeast-poker-mobile',    'label' => 'Mobile Client',  'icon' => '📱', 'tech' => 'Expo · React Native', 'blurb' => 'Android & iOS client — the felt in your pocket, native back-nav and all.'],
+    ];
+
+    $repos = array_map(function ($d) use ($owner) {
+        $live = \Illuminate\Support\Facades\Cache::remember("gh:{$d['repo']}", 900, function () use ($owner, $d) {
+            $h = ['Accept' => 'application/vnd.github+json', 'User-Agent' => 'scarletbeast-poker'];
+            $meta = \Illuminate\Support\Facades\Http::withHeaders($h)->timeout(6)->get("https://api.github.com/repos/{$owner}/{$d['repo']}");
+            $log  = \Illuminate\Support\Facades\Http::withHeaders($h)->timeout(6)->get("https://api.github.com/repos/{$owner}/{$d['repo']}/commits", ['per_page' => 5]);
+
+            return [
+                'language' => $meta->ok() ? $meta->json('language') : null,
+                'stars'    => $meta->ok() ? (int) $meta->json('stargazers_count') : 0,
+                'commits'  => $log->ok() ? collect($log->json())->map(fn ($c) => [
+                    'sha'  => substr($c['sha'], 0, 7),
+                    'url'  => $c['html_url'],
+                    'msg'  => strtok($c['commit']['message'], "\n"),
+                    'when' => \Illuminate\Support\Carbon::parse($c['commit']['author']['date'])->diffForHumans(),
+                ])->all() : [],
+            ];
+        });
+
+        return array_merge($d, $live, ['url' => "https://github.com/{$owner}/{$d['repo']}"]);
+    }, $defs);
+
+    return view('developers', ['repos' => $repos, 'owner' => $owner]);
+};
+Route::get('/developers', $developers);
+Route::get('/dev', $developers);
 
 /* ----------------------------------------------------------------- auth */
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -53,6 +90,8 @@ Route::prefix('api')->group(function () {
     Route::get('/tables/{table}/hud', [\App\Http\Controllers\HudController::class, 'table']);
     Route::get('/hud/profiles', [\App\Http\Controllers\HudController::class, 'index']);
     Route::get('/tables/{table}/hands', [PlayController::class, 'hands']);
+    Route::get('/tournaments', [\App\Http\Controllers\TournamentController::class, 'index']);
+    Route::get('/tournaments/{tournament}', [\App\Http\Controllers\TournamentController::class, 'show']);
 });
 
 /* -------------------------------------------- authenticated player (web) */
@@ -71,6 +110,9 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/hud/upload', [\App\Http\Controllers\HudController::class, 'upload']);
     Route::post('/hud/select', [\App\Http\Controllers\HudController::class, 'select']);
     Route::delete('/hud/profiles/{profile}', [\App\Http\Controllers\HudController::class, 'destroy']);
+
+    Route::post('/tournaments/{tournament}/register', [\App\Http\Controllers\TournamentController::class, 'register']);
+    Route::post('/tournaments/{tournament}/unregister', [\App\Http\Controllers\TournamentController::class, 'unregister']);
 });
 
 /* ------------------------------------------------------------- the altar */

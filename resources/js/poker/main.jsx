@@ -78,6 +78,7 @@ function AppBar() {
         <A href="/" className="badge hvm">♠ LOBBY</A>
         <A href="/players" className="badge gold">SHARKS</A>
         <a href="/api-docs" className="badge">API</a>
+        <a href="/developers" className="badge">DEV</a>
         <a href="/download" className="badge">GET APP</a>
         {me && <A href="/wallet" className="badge ho">VAULT</A>}
         {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}

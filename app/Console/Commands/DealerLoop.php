@@ -34,6 +34,13 @@ class DealerLoop extends Command
                 } catch (\Throwable $e) {
                     $this->error('autoscale: ' . $e->getMessage());
                 }
+                // ...and the bracket god tend the tournaments: blind clock,
+                // bust-outs, table balancing, payouts, scheduled starts.
+                try {
+                    app(\App\Services\TournamentManager::class)->tick();
+                } catch (\Throwable $e) {
+                    $this->error('tournament: ' . $e->getMessage());
+                }
             }
 
             $tableIds = PokerTable::where('status', 'active')
