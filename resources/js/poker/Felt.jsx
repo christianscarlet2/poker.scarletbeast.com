@@ -45,10 +45,18 @@ function hudVal(key, v) {
 // Chip stack rendered ON the felt for a live street bet — denomination discs
 // scale with the wager, drifting toward the pot from the bettor's seat.
 // Pushed well clear of the seat→center corridor the HUD chips occupy.
-function FeltChips({ x, y, amount, bbc }) {
-  // Position most of the way from the seat toward the table center.
-  const cx = x + (50 - x) * 0.46;
-  const cy = y + (46 - y) * 0.50;
+function FeltChips({ x, y, amount, bbc, portrait }) {
+  // Push the chips toward the pot. The portrait (mobile) felt is narrow and its
+  // HUD is proportionally wide, so chips go deeper toward center there and the
+  // sideways clearance is larger.
+  const inward = portrait ? 0.60 : 0.44;
+  const side = portrait ? 18 : 13;
+  let cx = x + (50 - x) * inward;
+  const cy = y + (46 - y) * inward;
+  // Seats near the vertical center line share the HUD's column — step the chips
+  // sideways (fading out toward the rails), opposite the dealer puck.
+  const verticalness = 1 - Math.min(1, Math.abs(x - 50) / 30);
+  cx += (x <= 50 ? -1 : 1) * side * verticalness;
   const discs = Math.min(5, 1 + Math.floor(Math.log10(Math.max(1, amount / Math.max(1, bbc)) + 1) * 2));
   return (
     <div className="felt-chips" style={{ left: `${cx}%`, top: `${cy}%` }}>
@@ -183,7 +191,14 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
         const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
-        const lower = y > 55; // lower-rail seats flip HUD above, onto the felt
+        // HUD placement that never lets two HUDs collide: SIDE-rail seats put
+        // their HUD on the OUTWARD vertical side (top-side → up, bottom-side →
+        // down) so a rail's two seats diverge instead of converging; CENTER
+        // seats (no same-column neighbour, and no room toward the edge) put it
+        // on the INWARD side toward the open middle.
+        const isSide = Math.abs(x - 50) > 25;
+        const hudAbove = isSide ? (y < 46) : (y > 46);
+        const lower = y > 55; // (kept for the tooltip-open direction)
         return (
           <React.Fragment key={p.seat}>
             <div
@@ -202,7 +217,7 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
                   : null}
               </div>
               {hud && hud.profile && hud.seats && hud.seats[p.seat] && (
-                <HudChip rows={hud.profile.rows} map={hud.map} stats={hud.seats[p.seat]} above={lower} />
+                <HudChip rows={hud.profile.rows} map={hud.map} stats={hud.seats[p.seat]} above={hudAbove} />
               )}
               {win && (
                 <div className="winner">
@@ -214,16 +229,22 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
             </div>
             {/* Street wager rides the felt as a chip stack, not seat text. */}
             {p.committed_street > 0 && (
-              <FeltChips x={x} y={y} amount={p.committed_street} bbc={bbc} />
+              <FeltChips x={x} y={y} amount={p.committed_street} bbc={bbc} portrait={portrait} />
             )}
             {/* The dealer puck sits to the SIDE of the avatar (toward center),
                 at the seat's own height. The HUD chip extends screen-vertically
                 above/below the avatar and the wagered chips run inward toward
                 the pot — so a horizontal sidestep clears both lanes entirely. */}
             {h.button === p.seat && (() => {
-              const dir = x <= 50 ? 1 : -1;            // nudge toward table center
-              const px = x + dir * 10;                 // beside the avatar, clear of the HUD column
-              const py = y + (46 - y) * 0.10;          // a hair toward center — "in front"
+              // The HUD always sits ABOVE or BELOW the avatar; the bet stack
+              // runs deep inward toward the pot. So the puck just steps to the
+              // SIDE at the avatar's own row — beside the avatar, clear of the
+              // vertically-offset HUD and the far-inward chips.
+              const px = x + (x <= 50 ? 1 : -1) * (portrait ? 10 : 8);
+              // Side seats wear the HUD outward, so on the cramped mobile felt
+              // nudge the puck inward (off that HUD). Center seats wear it
+              // inward — leave the puck on the avatar row, already clear.
+              const py = y + (portrait && isSide ? -Math.sign(y - 46) * 4 : 0);
               return <div className="dealer-puck" style={{ left: `${px}%`, top: `${py}%` }}>D</div>;
             })()}
           </React.Fragment>
