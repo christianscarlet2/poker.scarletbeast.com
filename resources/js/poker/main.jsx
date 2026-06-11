@@ -6,6 +6,7 @@ import Marquee, { PHRASES } from './Marquee.jsx';
 import { Card, Board } from './cards.jsx';
 import { UnitProvider, useUnit, Money, usd, dollars } from './money.jsx';
 import { SkinProvider, useSkin, SkinSwitcher, DesktopTitlebar, MobileNav } from './skin.jsx';
+import { STAT_INFO } from './statsInfo.js';
 
 /* ----------------------------------------------------- app / window context */
 // "Bare" = a standalone table window: just the felt, no shared chrome.
@@ -76,6 +77,7 @@ function AppBar() {
     <div className="wrap toprow">
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
         <A href="/" className="badge hvm">♠ LOBBY</A>
+        <A href="/tournaments" className="badge mo">BRACKETS</A>
         <A href="/players" className="badge gold">SHARKS</A>
         <a href="/api-docs" className="badge">API</a>
         <a href="/developers" className="badge">DEV</a>
@@ -720,6 +722,254 @@ function PlayersPage() {
   );
 }
 
+/* ------------------------------------------------------------ stats guide */
+function StatsGuidePage() {
+  useEffect(() => {
+    // honor #anchor deep links from HUD tooltips
+    const id = window.location.hash.slice(1);
+    if (id) setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+  }, []);
+  const entries = Object.entries(STAT_INFO).filter(([k]) => k !== 'name');
+  return (
+    <div className="wrap">
+      <div className="toprow">
+        <h2 style={{ margin: 0 }}>The Tell Codex</h2>
+        <span className="mono" style={{ color: 'var(--pk-dim)' }}>every HUD number, decoded</span>
+      </div>
+      <div className="panel">
+        <div className="hint">These are the statistics the HUD overlays on every seat — the same numbers PokerTracker grinds from millions of hands, computed here from the house's own archive. Hover any stat at the felt for the short version; this page is the long one.</div>
+        {entries.map(([key, info]) => (
+          <div key={key} id={key} style={{ padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
+            <h3 style={{ margin: '0 0 6px', color: 'var(--pk-gold)', fontFamily: 'var(--pk-mono)', fontSize: 14, letterSpacing: '.05em', textTransform: 'uppercase' }}>{info.title}</h3>
+            <p style={{ margin: 0, color: '#cfc7bd', lineHeight: 1.6, fontSize: 14 }}>{info.long}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ tournaments */
+const T_STATUS = { running: 'LIVE', registering: 'OPEN', scheduled: 'SOON', finished: 'DONE', cancelled: 'DEAD' };
+
+function TournamentsPage() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    const load = () => api.get('/api/tournaments').then(d => setRows(d.tournaments)).catch(() => setRows([]));
+    load();
+    const iv = setInterval(load, 5000);
+    return () => clearInterval(iv);
+  }, []);
+  if (!rows) return <div className="wrap"><div className="center-msg">Raising the brackets…</div></div>;
+  return (
+    <div className="wrap">
+      <div className="toprow"><h2 style={{ margin: 0 }}>The Brackets</h2><span className="mono" style={{ color: 'var(--pk-dim)' }}>last soul standing takes the pool</span></div>
+      <div className="panel">
+        {rows.length === 0 ? <div className="hint">No tournaments yet — the warden is sharpening the knives.</div> : (
+          <table className="tbl">
+            <thead><tr><th></th><th>Name</th><th>Game</th><th>Buy-in</th><th>Prize Pool</th><th>Field</th><th>Blinds</th><th></th></tr></thead>
+            <tbody>
+              {rows.map(t => (
+                <tr key={t.id}>
+                  <td><span className={`badge ${t.status === 'running' ? 'hvm' : t.status === 'registering' ? 'gold' : ''}`}>{T_STATUS[t.status] || t.status}</span></td>
+                  <td><A href={`/tournaments/${t.id}`}>{t.name}</A></td>
+                  <td className="mono">{t.game_name}</td>
+                  <td>{usd(t.buy_in)}{t.fee > 0 ? `+${usd(t.fee)}` : ''}</td>
+                  <td style={{ color: 'var(--pk-gold)' }}>{usd(t.prize_pool)}</td>
+                  <td>{t.players}/{t.max_players}</td>
+                  <td className="mono">{usd(t.blinds.sb)}/{usd(t.blinds.bb)}{t.status === 'running' ? ` · L${t.level + 1}` : ''}</td>
+                  <td><A href={`/tournaments/${t.id}`} className="badge">view</A></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TournamentPage({ id }) {
+  const { me, refresh } = useMe();
+  const [t, setT] = useState(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api.get(`/api/tournaments/${id}`).then(d => setT(d.tournament)).catch(e => setErr(e.message));
+  }, [id]);
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 4000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  const doIt = async (action) => {
+    setBusy(true); setErr('');
+    try { await api.post(`/api/tournaments/${id}/${action}`); await refresh(); load(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (!t) return <div className="wrap"><div className="center-msg">{err || 'Reading the bracket…'}</div></div>;
+  const live = t.entries.filter(e => e.status === 'playing');
+  const done = t.entries.filter(e => e.status === 'busted').sort((a, b) => (a.place || 999) - (b.place || 999));
+
+  return (
+    <div className="wrap">
+      <div className="toprow">
+        <div>
+          <A href="/tournaments" className="badge">← BRACKETS</A>
+          <strong style={{ marginLeft: 12, fontSize: 20 }}>{t.name}</strong>
+          <span className={`badge ${t.status === 'running' ? 'hvm' : 'gold'}`} style={{ marginLeft: 8 }}>{T_STATUS[t.status] || t.status}</span>
+        </div>
+        <span className="chips-pill">PRIZE POOL · {usd(t.prize_pool)}</span>
+      </div>
+
+      <div className="callouts">
+        <div className="callout"><div className="ic">🎟</div><h3>{usd(t.buy_in)}{t.fee > 0 ? ` + ${usd(t.fee)}` : ''}</h3><p>buy-in · {t.game_name}</p></div>
+        <div className="callout"><div className="ic">⏱</div><h3>{usd(t.blinds.sb)}/{usd(t.blinds.bb)}</h3><p>{t.status === 'running' ? `level ${t.level + 1} · ${t.blinds.minutes}m levels` : `starting blinds · ${(t.starting_stack / t.blinds.bb).toFixed(0)}bb deep`}</p></div>
+        <div className="callout"><div className="ic">⚔️</div><h3>{t.status === 'running' ? `${live.length} alive` : `${t.players} entered`}</h3><p>of {t.field} field · {t.seats_per_table}-max tables</p></div>
+      </div>
+
+      {me && (t.status === 'registering' || t.status === 'scheduled') && (
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', margin: '6px 0 14px' }}>
+          {t.you === 'registered'
+            ? <button className="btn ghost" disabled={busy} onClick={() => doIt('unregister')}>Unregister (refund)</button>
+            : <button className="btn big gold" disabled={busy} onClick={() => doIt('register')}>Register · {usd(t.buy_in + t.fee)}</button>}
+        </div>
+      )}
+      {err && <div className="err" style={{ textAlign: 'center' }}>{err}</div>}
+
+      <div className="row">
+        <div className="panel">
+          <h2>{t.status === 'finished' ? 'Final Standings' : 'The Field'}</h2>
+          <table className="tbl">
+            <thead><tr><th>#</th><th>Player</th><th>{t.status === 'running' ? 'Stack' : 'Prize'}</th></tr></thead>
+            <tbody>
+              {live.sort((a, b) => (b.stack || 0) - (a.stack || 0)).map((e, i) => (
+                <tr key={e.username}>
+                  <td className="mono">{i + 1}</td>
+                  <td><A href={`/player/${encodeURIComponent(e.username)}`}>{e.avatar} {e.username}</A>{e.is_bot ? ' ⚙' : ''}</td>
+                  <td style={{ color: 'var(--pk-gold)' }}>{e.stack != null ? e.stack.toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+              {done.map(e => (
+                <tr key={e.username} style={{ opacity: e.place <= (t.payout_pct || []).length ? 1 : 0.5 }}>
+                  <td className="mono">{e.place === 1 ? '👑' : `#${e.place}`}</td>
+                  <td><A href={`/player/${encodeURIComponent(e.username)}`}>{e.avatar} {e.username}</A>{e.is_bot ? ' ⚙' : ''}</td>
+                  <td style={{ color: e.prize > 0 ? 'var(--pk-gold)' : 'var(--pk-dim)' }}>{e.prize > 0 ? `+${usd(e.prize)}` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          {t.status === 'running' && (
+            <div className="panel">
+              <h2>Live Tables</h2>
+              {t.tables.map(tb => (
+                <div key={tb.id} className="kv">
+                  <span>{tb.name} · {tb.players} seated</span>
+                  <span><A href={`/observe/${tb.id}`} className="badge">👁 watch</A></span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="panel">
+            <h2>Blind Ladder</h2>
+            <table className="tbl">
+              <thead><tr><th>Lvl</th><th>Blinds</th><th>Mins</th></tr></thead>
+              <tbody>
+                {(t.blind_levels || []).map((l, i) => (
+                  <tr key={i} style={t.status === 'running' && i === t.level ? { color: 'var(--pk-gold)' } : {}}>
+                    <td>{i + 1}{t.status === 'running' && i === t.level ? ' ◀' : ''}</td>
+                    <td className="mono">{usd(l.sb)}/{usd(l.bb)}</td>
+                    <td>{l.minutes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="panel">
+            <h2>Payouts</h2>
+            {(t.payout_pct || []).map((p, i) => (
+              <div key={i} className="kv"><span>{i + 1}. place</span><span>{p}% · {usd(Math.floor(t.prize_pool * p / 100))}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Warden panel: forge and drive tournaments from the altar.
+function TournamentAdminPanel() {
+  const [rows, setRows] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [f, setF] = useState({ name: '', game_type: 'nlhe', buy_in: 1000, fee: 100, starting_stack: 10000, seats_per_table: 6, max_players: 32, starts_at: '' });
+  const load = () => api.get('/api/tournaments').then(d => setRows(d.tournaments)).catch(() => {});
+  useEffect(() => { load(); const iv = setInterval(load, 6000); return () => clearInterval(iv); }, []);
+
+  const create = async () => {
+    setMsg('');
+    try {
+      await api.post('/api/admin/tournaments', { ...f, starts_at: f.starts_at || null });
+      setMsg('Bracket raised.'); load();
+    } catch (e) { setMsg(e.message); }
+  };
+  const act = async (id, what, body) => {
+    setMsg('');
+    try { const r = await api.post(`/api/admin/tournaments/${id}/${what}`, body); setMsg(r.added != null ? `${r.added} machines conscripted.` : 'Done.'); load(); }
+    catch (e) { setMsg(e.message); }
+  };
+
+  return (
+    <div className="panel">
+      <h2>Tournament Forge</h2>
+      <div className="hint">Create brackets, conscript machines, start or burn them. The clock, bust-outs, balancing, and payouts run themselves.</div>
+      <table className="tbl">
+        <thead><tr><th>St</th><th>Name</th><th>Field</th><th>Pool</th><th></th></tr></thead>
+        <tbody>
+          {rows.map(t => (
+            <tr key={t.id}>
+              <td><span className="badge">{T_STATUS[t.status] || t.status}</span></td>
+              <td><A href={`/tournaments/${t.id}`}>{t.name}</A></td>
+              <td>{t.players}/{t.max_players}</td>
+              <td>{usd(t.prize_pool)}</td>
+              <td style={{ display: 'flex', gap: 5 }}>
+                {(t.status === 'registering' || t.status === 'scheduled') && <>
+                  <button className="badge" onClick={() => act(t.id, 'fill-bots', { count: 8 })}>+bots</button>
+                  <button className="badge gold" onClick={() => act(t.id, 'start')}>start</button>
+                </>}
+                {t.status !== 'finished' && t.status !== 'cancelled' && <button className="badge" onClick={() => act(t.id, 'cancel')}>burn</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="hint" style={{ marginTop: 12 }}>New bracket — money in dollars-cents handled below as cents.</div>
+      <div className="row" style={{ marginTop: 6 }}>
+        <div><label>Name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Midnight Massacre" /></div>
+        <div><label>Game</label>
+          <select value={f.game_type} onChange={e => setF({ ...f, game_type: e.target.value })}>
+            {['nlhe', 'lhe', 'plo', 'plo8', 'shortdeck', 'stud', 'razz', 'draw5'].map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <div><label>Buy-in ($)</label><input type="number" step="0.01" value={(f.buy_in / 100).toFixed(2)} onChange={e => setF({ ...f, buy_in: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Fee ($)</label><input type="number" step="0.01" value={(f.fee / 100).toFixed(2)} onChange={e => setF({ ...f, fee: Math.round(+e.target.value * 100) })} /></div>
+        <div><label>Starting stack</label><input type="number" value={f.starting_stack} onChange={e => setF({ ...f, starting_stack: +e.target.value })} /></div>
+        <div><label>Seats/table</label><input type="number" value={f.seats_per_table} onChange={e => setF({ ...f, seats_per_table: +e.target.value })} /></div>
+        <div><label>Max players</label><input type="number" value={f.max_players} onChange={e => setF({ ...f, max_players: +e.target.value })} /></div>
+        <div><label>Auto-start (optional)</label><input type="datetime-local" value={f.starts_at} onChange={e => setF({ ...f, starts_at: e.target.value })} /></div>
+      </div>
+      <button className="btn" style={{ marginTop: 12 }} onClick={create}>Raise the bracket</button>
+      {msg && <div className="ok">{msg}</div>}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ auth */
 function AuthPage({ mode }) {
   const { refresh } = useMe();
@@ -937,6 +1187,7 @@ function Admin() {
       </div>
 
       <SettingsPanel settings={d.settings} onSave={saveSettings} />
+      <TournamentAdminPanel />
       <StakesPanel stakes={d.stakes} gameTypes={d.game_types} onChange={load} />
       <WithdrawalsPanel rows={d.pending_withdrawals} onChange={load} />
       {msg && <div className="ok">{msg}</div>}
@@ -1049,6 +1300,9 @@ function Router() {
   if (path === '/admin') return <Admin />;
   let m;
   if (path === '/players') return <PlayersPage />;
+  if (path === '/stats-guide') return <StatsGuidePage />;
+  if (path === '/tournaments') return <TournamentsPage />;
+  if ((m = path.match(/^\/tournaments\/(\d+)/))) return <TournamentPage id={m[1]} />;
   if ((m = path.match(/^\/tables\/(\d+)/))) return <TablePage id={m[1]} />;
   if ((m = path.match(/^\/observe\/(\d+)/))) return <Observe id={m[1]} />;
   if ((m = path.match(/^\/replay\/(\d+)/))) return <Replay id={m[1]} />;

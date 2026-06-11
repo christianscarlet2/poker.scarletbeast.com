@@ -16,6 +16,18 @@
     @include('partials.chrome', ['bare' => $bare])
 
     @unless ($bare)
+    {{-- Fork-me corner ribbon → the developers hub. Only on wide viewports,
+         where the centered nav leaves the corner empty (so it never overlaps). --}}
+    <style>
+      .sb-fork{position:fixed;top:20px;right:-58px;transform:rotate(45deg);z-index:60;
+        background:var(--pk-sc,#e10600);color:#fff;font:700 12px/1 var(--pk-mono,ui-monospace,monospace);
+        letter-spacing:.12em;text-transform:uppercase;text-decoration:none;padding:8px 66px;
+        box-shadow:0 3px 14px rgba(0,0,0,.45);border-top:1px solid rgba(255,255,255,.28);
+        border-bottom:1px solid rgba(0,0,0,.35);transition:background .15s}
+      .sb-fork:hover{background:var(--pk-scb,#ff2418)}
+      @media(max-width:1180px){.sb-fork{display:none}}
+    </style>
+    <a class="sb-fork" href="/developers" title="Fork the source — developers hub">⑂ Fork me</a>
     {{-- Marquee BELOW the header --}}
     @php
         $mq_top = [

@@ -67,6 +67,8 @@
     @endphp
     {!! pk_marquee($mq, 'hot', '55') !!}
 
+    @include('partials.subnav', ['active' => 'download'])
+
     <div class="wrap">
         <h1>Get the <b>Apps</b></h1>
         <p class="lead">The felt, native. Same account, same chips, same bots — now on your desktop and in your pocket. Each client is a hardened shell around the live table; sign in once and play.</p>

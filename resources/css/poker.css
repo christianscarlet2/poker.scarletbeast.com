@@ -140,6 +140,16 @@ table.tbl th{color:var(--pk-scs);text-transform:uppercase;letter-spacing:.1em;fo
 .hud-pick{display:flex;justify-content:space-between;align-items:center;gap:8px;
   font-family:var(--pk-mono);font-size:12px;padding:7px 8px;border-radius:7px;cursor:pointer}
 .hud-pick:hover{background:rgba(216,178,90,.08)}
+/* Hover codex: each HUD stat explains itself, with a door to the full guide. */
+.hud-it{position:relative}
+.hud-tip{display:none;position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);
+  z-index:90;width:215px;background:#0d0808;border:1px solid rgba(216,178,90,.5);border-radius:8px;
+  padding:9px 11px;font-size:10.5px;line-height:1.45;color:var(--pk-bone);text-align:left;
+  white-space:normal;box-shadow:0 10px 32px rgba(0,0,0,.75);pointer-events:auto}
+.hud-tip b{display:block;color:var(--pk-gold);margin-bottom:3px;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.hud-tip a{display:block;margin-top:6px;color:var(--pk-scs);text-decoration:none;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.hud-it:hover .hud-tip{display:block}
+.skin-mobile .hud-it:hover .hud-tip{width:170px}
 
 /* ════════════════════════════════════════════════════════════════════════
    SKINS — one brand, three postures.

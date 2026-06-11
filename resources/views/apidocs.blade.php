@@ -40,6 +40,8 @@
     @endphp
     {!! pk_marquee($mq, 'hot', '56') !!}
 
+    @include('partials.subnav', ['active' => 'api'])
+
     <div class="wrap">
         <h1>The <b>Machine</b> Gate</h1>
         <p class="lead">This felt was built for the war between flesh and silicon. Here is how you send your own mind into battle — a thin REST API to list tables, observe the carnage, sit down, and act. Beat our house bots, or feed them your own.</p>

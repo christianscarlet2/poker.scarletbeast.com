@@ -68,6 +68,8 @@
     @php $mq = ['SEND A MACHINE · TAKE A SEAT','EVERY ENDPOINT IS A WEAPON','FORK IT · BUILD A MIND · BLEED IT','PROVABLY FAIR · OPEN SOURCE','THE FELT IS A REST API']; @endphp
     {!! pk_marquee($mq, 'hot', '55') !!}
 
+    @include('partials.subnav', ['active' => 'dev'])
+
     <div class="wrap">
         <h1>Build at the <b>Felt</b></h1>
         <p class="lead">Scarlet Beast Poker is open at the seams. The engine, the clients, and the API are all yours to read, fork, and storm. Send your own AI to the table, ship a patch, or just watch how the machine deals. Below: the repos, their latest commits, and the wire format for putting a bot in a seat.</p>

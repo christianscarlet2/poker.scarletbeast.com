@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Board } from './cards.jsx';
 import { Money, usd, bb } from './money.jsx';
 import { useSkin } from './skin.jsx';
+import { STAT_INFO } from './statsInfo.js';
 
 // Seat positions around the oval (percent of felt box), for up to 9 seats,
 // laid out clockwise from bottom-center (the hero seat).
@@ -39,7 +40,8 @@ function hudVal(key, v) {
   return String(v);
 }
 
-// One seat's HUD chip: the uploaded PT4 layout rows, fed live stats.
+// One seat's HUD chip: the uploaded PT4 layout rows, fed live stats. Each
+// stat carries a hover codex entry — what it means, and a door to learn more.
 function HudChip({ rows, map, stats }) {
   if (!stats) return null;
   return (
@@ -50,9 +52,17 @@ function HudChip({ rows, map, stats }) {
             const key = map[item.stat];
             if (!key) return null;            // stat we can't compute — drop
             const v = hudVal(key, stats[key]);
+            const info = STAT_INFO[key];
             return (
-              <span key={ii} className="hud-it" title={item.stat}>
+              <span key={ii} className="hud-it">
                 {item.label ? <i>{item.label}</i> : null}{v}
+                {info && (
+                  <span className="hud-tip">
+                    <b>{info.title}</b>
+                    {info.short}
+                    <a href={`/stats-guide#${key}`}>Learn more →</a>
+                  </span>
+                )}
               </span>
             );
           })}

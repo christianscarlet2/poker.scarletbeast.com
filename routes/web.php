@@ -29,6 +29,7 @@ Route::get('/players', $spa);
 Route::get('/player/{username}', $spa);
 Route::get('/tournaments', $spa);
 Route::get('/tournaments/{tournament}', $spa)->whereNumber('tournament');
+Route::get('/stats-guide', $spa);
 
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
