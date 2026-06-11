@@ -216,13 +216,14 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
             {p.committed_street > 0 && (
               <FeltChips x={x} y={y} amount={p.committed_street} bbc={bbc} />
             )}
-            {/* The dealer puck steps PERPENDICULAR to the seat→pot line, so it
-                never shares a lane with the HUD chip or the wagered stacks. */}
+            {/* The dealer puck sits to the SIDE of the avatar (toward center),
+                at the seat's own height. The HUD chip extends screen-vertically
+                above/below the avatar and the wagered chips run inward toward
+                the pot — so a horizontal sidestep clears both lanes entirely. */}
             {h.button === p.seat && (() => {
-              const dx = 50 - x, dy = 46 - y;
-              const len = Math.max(1, Math.hypot(dx, dy));
-              const px = x + dx * 0.22 - (dy / len) * 9;  // sidestep off the corridor
-              const py = y + dy * 0.22 + (dx / len) * 9;
+              const dir = x <= 50 ? 1 : -1;            // nudge toward table center
+              const px = x + dir * 10;                 // beside the avatar, clear of the HUD column
+              const py = y + (46 - y) * 0.10;          // a hair toward center — "in front"
               return <div className="dealer-puck" style={{ left: `${px}%`, top: `${py}%` }}>D</div>;
             })()}
           </React.Fragment>
