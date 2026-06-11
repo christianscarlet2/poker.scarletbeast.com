@@ -56,6 +56,7 @@ class PlayController extends Controller
         return response()->json([
             'tables' => $rows->values(),
             'hero_table_id' => $hero['id'] ?? null,
+            'demo' => \App\Services\DemoMode::live(),
             'types' => [
                 'human_vs_machine' => 'Human vs Machine',
                 'machine_only' => 'Machine Only',

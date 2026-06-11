@@ -131,7 +131,7 @@ function Home() {
 
   return (
     <>
-      <HeroLive heroId={lobby?.hero_table_id} />
+      <HeroLive heroId={lobby?.hero_table_id} demo={lobby?.demo} />
 
       <div className="wrap">
         <Marquee items={PHRASES.arena} cls="hot flush" speed={54} />
@@ -173,7 +173,7 @@ function Home() {
   );
 }
 
-function HeroLive({ heroId }) {
+function HeroLive({ heroId, demo }) {
   const [state, setState] = useState(null);
   useEffect(() => {
     if (!heroId) return;
@@ -185,6 +185,11 @@ function HeroLive({ heroId }) {
 
   return (
     <div className="hero">
+      {demo && (
+        <a href="/register" className="demo-strip" title="Demo mode — register free and we stake you $10,000">
+          DEMO MODE · $10K FREE
+        </a>
+      )}
       <div className="wrap hero-grid">
         <div>
           <div className="kick">{state?.table?.game_name || "No-Limit Texas Hold'em"} · Man vs Machine</div>

@@ -34,6 +34,12 @@ class AuthController extends Controller
         ]);
         \App\Services\Rewards::ensureCode($user);
 
+        // Demo mode: stake every new soul $10,000 from the house float so the
+        // exhibition is instantly playable — no deposit, no waiting.
+        if (\App\Services\DemoMode::live()) {
+            \App\Services\Bankroll::adjust($user->id, 1000000, 'demo_grant', 'Demo mode welcome stake');
+        }
+
         // One field, two doors: a signup code may be an affiliate's referral
         // code or a bonus promo — try both, in that order. Silent on miss so
         // a bad code never blocks an enlistment.
