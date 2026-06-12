@@ -33,6 +33,25 @@ function posFor(maxSeats, seatNo, portrait) {
 // Games with no community board (stud + draw families).
 const NO_BOARD = ['stud', 'razz', 'draw5'];
 
+// A seated-but-not-yet-dealt player. Shown the instant someone buys in so the
+// chair is visible immediately — no cards, just the avatar/stack and a
+// "next hand" tag — until the engine deals them into the coming hand.
+function WaitingSeat({ s, maxSeats, portrait, bbc }) {
+  const [x, y] = posFor(maxSeats, s.seat_no, portrait);
+  const lower = y > 55;
+  return (
+    <div
+      className={`seat waiting${s.is_bot ? ' bot' : ''} ${lower ? 'low' : 'high'}`}
+      style={{ left: `${x}%`, top: `${y}%` }}
+    >
+      <div className="av">{s.avatar || (s.is_bot ? '🤖' : '☠️')}</div>
+      <div className="nm">{s.name || `Seat ${s.seat_no}`}{s.is_bot ? ' ⚙' : ''}</div>
+      <div className="stk"><Money c={s.stack} bbCents={bbc} /></div>
+      <div className="waiting-tag">NEXT HAND</div>
+    </div>
+  );
+}
+
 // PT-style value formatting per computed stat key.
 function hudVal(key, v) {
   if (v === null || v === undefined) return '–';
@@ -150,7 +169,24 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
   }, [state?.hand?.hand_no, (state?.hand?.actions || []).length, state?.hand?.street, state?.hand?.to_act]);
 
   if (!state || !state.hand) {
-    return <div className="center-msg">The felt is dark. Waiting for souls…</div>;
+    // No hand running yet — but if anyone has bought in, show their chairs so a
+    // player who just sat down gets immediate feedback, not a dark void.
+    const waiting = (state?.seats || []).filter((s) => s.user_id && s.status !== 'empty');
+    if (!waiting.length) {
+      return <div className="center-msg">The felt is dark. Waiting for souls…</div>;
+    }
+    const t = state.table;
+    const portrait = skin === 'mobile';
+    return (
+      <div className="felt">
+        <div className="center">
+          <div className="street">WAITING FOR PLAYERS…</div>
+        </div>
+        {waiting.map((s) => (
+          <WaitingSeat key={s.seat_no} s={s} maxSeats={t.max_seats} portrait={portrait} bbc={t.bb} />
+        ))}
+      </div>
+    );
   }
   const h = state.hand;
   const t = state.table;
@@ -168,6 +204,12 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
   });
   const bbc = t.bb;
   const gameTag = t.game_short || (t.game_name ? t.game_name : null);
+  // Players who have bought in but aren't in the current hand (sat down mid-hand)
+  // get a visible chair right away, dealt in when the next hand starts.
+  const inHand = new Set(Object.values(h.players).map((p) => p.seat));
+  const waiting = (state.seats || []).filter(
+    (s) => s.user_id && s.status !== 'empty' && !inHand.has(s.seat_no)
+  );
 
   return (
     <div className="felt">
@@ -250,6 +292,9 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
           </React.Fragment>
         );
       })}
+      {waiting.map((s) => (
+        <WaitingSeat key={`w${s.seat_no}`} s={s} maxSeats={t.max_seats} portrait={portrait} bbc={bbc} />
+      ))}
     </div>
   );
 }

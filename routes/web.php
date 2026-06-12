@@ -81,6 +81,8 @@ $developers = function () {
 };
 Route::get('/developers', $developers);
 Route::get('/dev', $developers);
+Route::view('/developers/bot-profile', 'bot-profile');
+Route::view('/bot-profile', 'bot-profile');
 
 /* ----------------------------------------------------------------- auth */
 Route::post('/auth/register', [AuthController::class, 'register']);

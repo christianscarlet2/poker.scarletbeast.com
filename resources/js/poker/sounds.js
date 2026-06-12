@@ -75,6 +75,20 @@ const CUES = {
   draw: () => { noise(0.06, { gain: 0.07, lowpass: 3000 }); noise(0.06, { gain: 0.07, when: 0.08, lowpass: 3200 }); },
   deal: () => { for (let i = 0; i < 3; i++) noise(0.05, { gain: 0.06, when: i * 0.07, lowpass: 3500 }); },
   win: () => { tone(880, 0.10, { gain: 0.10 }); tone(1108.7, 0.10, { gain: 0.10, when: 0.09 }); tone(1318.5, 0.18, { gain: 0.12, when: 0.18 }); },
+  // casino WIN — a triumphant rising fanfare with a coin-shower sparkle on top
+  jackpot: () => {
+    const notes = [659.3, 880, 1046.5, 1318.5, 1760]; // E5 A5 C6 E6 A6
+    notes.forEach((f, i) => tone(f, 0.16, { type: 'triangle', gain: 0.12, when: i * 0.085 }));
+    tone(1318.5, 0.5, { type: 'sine', gain: 0.10, when: 0.42 });   // held top note
+    for (let i = 0; i < 7; i++) tone(2300 + i * 230, 0.05, { type: 'sine', gain: 0.05, when: 0.36 + i * 0.05 }); // coin sparkle
+  },
+  // casino LOSE — a short descending "wah-wah" sting
+  lose: () => {
+    tone(440, 0.16, { type: 'sawtooth', gain: 0.10, slide: -40 });
+    tone(370, 0.16, { type: 'sawtooth', gain: 0.10, when: 0.16, slide: -36 });
+    tone(294, 0.34, { type: 'sawtooth', gain: 0.11, when: 0.32, slide: -30 });
+    noise(0.3, { gain: 0.05, when: 0.32, lowpass: 1400 });
+  },
   your_turn: () => { tone(987.8, 0.09, { gain: 0.12 }); tone(1480, 0.12, { gain: 0.10, when: 0.10 }); },
   // the bomb: sub-bass drop + debris
   bomb: () => {

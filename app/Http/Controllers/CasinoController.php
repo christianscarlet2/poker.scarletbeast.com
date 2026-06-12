@@ -38,6 +38,7 @@ class CasinoController extends Controller
         $game = $data['game'];
         $seed = Rng::freshSeed();
 
+        try {
         return DB::transaction(function () use ($user, $game, $seed, $data) {
             if ($game === 'slots') {
                 $bet = (int) $data['amount'];
@@ -72,6 +73,9 @@ class CasinoController extends Controller
             ]);
             return response()->json(['ok' => true, 'round_id' => $round->id, 'seed' => $seed, 'result' => $res, 'chips' => $user->fresh()->chips]);
         });
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
     }
 
     /** Multi-step games: open a round (blackjack deal / craps come-out / VP deal). */
@@ -88,6 +92,7 @@ class CasinoController extends Controller
         $seed = Rng::freshSeed();
         $bet = (int) $data['amount'];
 
+        try {
         return DB::transaction(function () use ($user, $data, $seed, $bet) {
             Bankroll::adjust($user->id, -$bet, 'casino_bet', ucfirst($data['game']) . ' buy-in');
             $state = match ($data['game']) {
@@ -105,6 +110,9 @@ class CasinoController extends Controller
             }
             return response()->json(['ok' => true] + $this->viewRound($round->fresh()));
         });
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
     }
 
     /** Act on an open round: hit/stand/double, roll (+props), hold+draw. */
@@ -125,6 +133,7 @@ class CasinoController extends Controller
             return response()->json(['error' => 'No such open round.'], 404);
         }
 
+        try {
         return DB::transaction(function () use ($round, $data, $user) {
             $state = $round->state;
             switch ($round->game) {
@@ -189,6 +198,9 @@ class CasinoController extends Controller
             }
             return response()->json(['ok' => true] + $this->viewRound($round->fresh()));
         });
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
     }
 
     /**

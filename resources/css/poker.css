@@ -99,6 +99,12 @@ label{display:block;font-family:var(--pk-mono);font-size:11px;letter-spacing:.12
 .seat .hole.many .card.sm{width:24px;height:36px;font-size:12px}
 .badge.gold{color:var(--pk-gold);border-color:rgba(216,178,90,.4)}
 .seat.folded{opacity:.34}
+/* Seated, waiting to be dealt into the next hand. Dimmed, dashed ring, with a tag. */
+.seat.waiting{opacity:.7}
+.seat.waiting .av{border-style:dashed;border-color:var(--pk-gold);box-shadow:none}
+.seat.waiting .waiting-tag{font-family:var(--pk-mono);font-size:9px;letter-spacing:.14em;color:var(--pk-gold);
+  margin-top:4px;opacity:.85;animation:pk-wait-blink 1.4s steps(1,end) infinite}
+@keyframes pk-wait-blink{0%,100%{opacity:.85}50%{opacity:.3}}
 .seat .bet{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs);margin-top:3px}
 /* The dealer puck — a proper casino button resting on the felt. */
 .dealer-puck{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;
@@ -494,3 +500,62 @@ body.skin-mobile #poker-root{padding-bottom:74px}
 .lh-sub{color:var(--pk-dim);max-width:760px;line-height:1.55;margin:0 0 16px;font-size:15px}
 .lh-sub b{color:var(--pk-bone)}
 .lh-cta{display:flex;gap:11px;flex-wrap:wrap}
+
+/* ═════════════════════════════════ CASINO WIN / LOSE NEON BANNER ═══ */
+.panel,.vp-cab,.cr-table{position:relative}
+.cz-fx{position:absolute;inset:0;z-index:40;pointer-events:none}
+.cz-out{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
+  font-family:var(--pk-mono);font-weight:900;font-size:clamp(30px,6.4vw,60px);letter-spacing:.03em;
+  text-transform:uppercase;line-height:1;text-align:center;white-space:nowrap;
+  animation:cz-pop .42s cubic-bezier(.2,1.5,.4,1) both}
+.cz-out.win{color:#7dff9b;
+  text-shadow:0 0 7px #39ff14,0 0 20px #39ff14,0 0 40px rgba(57,255,20,.85),0 0 80px rgba(57,255,20,.5)}
+.cz-out.lose{color:#ff6a5d;
+  text-shadow:0 0 7px #ff2418,0 0 20px #ff2418,0 0 40px rgba(255,36,24,.9),0 0 80px rgba(255,36,24,.5)}
+@keyframes cz-pop{0%{transform:translate(-50%,-50%) scale(.35);opacity:0}
+  60%{transform:translate(-50%,-50%) scale(1.14);opacity:1}
+  100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+.cz-sess{position:absolute;top:9px;right:11px;font-family:var(--pk-mono);font-size:11px;font-weight:800;
+  letter-spacing:.16em;padding:4px 11px;border-radius:20px;background:rgba(0,0,0,.55);
+  border:1px solid rgba(255,255,255,.14)}
+.cz-sess.win{color:#7dff9b}.cz-sess.lose{color:#ff8a7d}
+
+/* ═══════════════════════════════════════════ CRAPS — TABLE LAYOUT ═══ */
+.cr-felt{display:flex;flex-direction:column;gap:12px;max-width:690px;margin:0 auto}
+.cr-points{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.cr-pt{position:relative;border:1.5px solid rgba(216,178,90,.3);border-radius:9px;padding:13px 0 15px;
+  text-align:center;background:rgba(0,0,0,.18);transition:.18s}
+.cr-pt.on{border-color:var(--pk-gold);background:rgba(216,178,90,.14);box-shadow:inset 0 0 16px rgba(216,178,90,.4)}
+.cr-pt-n{font-family:var(--pk-mono);font-weight:800;font-size:17px;letter-spacing:.05em;color:rgba(237,232,223,.75)}
+.cr-pt.on .cr-pt-n{color:var(--pk-gold)}
+.cr-onpuck{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-family:var(--pk-mono);
+  font-size:8.5px;font-weight:800;letter-spacing:.06em;color:#0a0a0a;background:var(--pk-bone);
+  border:2px solid var(--pk-gold);border-radius:50%;width:25px;height:25px;line-height:22px;
+  box-shadow:0 0 12px rgba(216,178,90,.75)}
+.cr-pit{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0 4px}
+.cr-offpuck{font-family:var(--pk-mono);font-size:9.5px;font-weight:800;letter-spacing:.1em;color:#0a0a0a;
+  background:#9a9088;border-radius:50%;width:30px;height:30px;line-height:30px;text-align:center}
+.cr-zone{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;
+  border:1.6px solid rgba(216,178,90,.34);border-radius:12px;padding:14px 10px;cursor:pointer;
+  background:linear-gradient(180deg,rgba(216,178,90,.05),rgba(0,0,0,.18));color:var(--pk-bone);transition:.16s}
+.cr-zone:hover:not(:disabled){border-color:var(--pk-gold);background:rgba(216,178,90,.12);transform:translateY(-1px)}
+.cr-zone:disabled{opacity:.5;cursor:default}
+.cr-zone.active{border-color:var(--pk-gold);box-shadow:0 0 16px rgba(216,178,90,.4)}
+.cr-zlabel{font-family:var(--pk-mono);font-weight:800;letter-spacing:.16em;font-size:14px;color:var(--pk-gold)}
+.cr-zsub{font-family:var(--pk-mono);font-size:10px;letter-spacing:.06em;color:var(--pk-dim)}
+.cr-zsub em{font-style:normal;color:var(--pk-scs)}
+.cr-props{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:560px){.cr-props{grid-template-columns:1fr}}
+.cr-chip{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;
+  align-items:center;animation:cz-pop .3s ease both;pointer-events:none}
+.cr-chip i{width:24px;height:7px;border-radius:50%;background:radial-gradient(circle at 50% 30%,#ff6a5a,#a31111);
+  border:1px dashed rgba(255,255,255,.55);margin-top:-4px;box-shadow:0 1px 2px rgba(0,0,0,.6)}
+.cr-chip i:first-child{margin-top:0}
+.cr-chip b{font-family:var(--pk-mono);font-size:10px;color:var(--pk-bone);margin-top:4px;
+  text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.cr-pass{width:100%;border:2px solid rgba(255,36,24,.5);border-radius:40px;padding:14px;cursor:pointer;
+  font-family:var(--pk-mono);font-weight:800;letter-spacing:.2em;text-transform:uppercase;font-size:13px;
+  color:var(--pk-scs);background:linear-gradient(180deg,rgba(225,6,0,.14),rgba(0,0,0,.2));transition:.16s}
+.cr-pass:hover:not(:disabled){background:rgba(225,6,0,.28);color:var(--pk-bone)}
+.cr-pass:disabled{cursor:default;opacity:.85}
+.cr-pass.locked{border-color:rgba(216,178,90,.5);color:var(--pk-gold);background:rgba(216,178,90,.08)}

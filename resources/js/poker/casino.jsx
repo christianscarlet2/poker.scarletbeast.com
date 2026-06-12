@@ -10,6 +10,46 @@ import { play as sfx } from './sounds.js';
  * video poker cabinet with a humming CRT. Every round provably fair.
  */
 
+// ── Win / Lose theater ────────────────────────────────────────────────────
+// One shared hook every game uses: feed it the round's NET result in cents
+// (positive = win, negative = loss) and it flashes the big neon banner, plays
+// the cue, and keeps a running session tally for games played back-to-back.
+function useOutcome() {
+  const [banner, setBanner] = useState(null); // { won, amount, n }
+  const [session, setSession] = useState(0);   // cumulative net cents this sitting
+  const n = useRef(0);
+  const timer = useRef(null);
+  const flash = (netCents) => {
+    netCents = Math.round(netCents || 0);
+    setSession((s) => s + netCents);
+    if (netCents === 0) return;                 // a push: no fanfare
+    sfx(netCents > 0 ? 'jackpot' : 'lose');
+    n.current += 1;
+    setBanner({ won: netCents > 0, amount: Math.abs(netCents), n: n.current });
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setBanner(null), 3000);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return { banner, session, flash };
+}
+
+function OutcomeBanner({ banner, session }) {
+  return (
+    <div className="cz-fx" aria-live="polite">
+      {banner && (
+        <div key={banner.n} className={`cz-out ${banner.won ? 'win' : 'lose'}`}>
+          {banner.won ? 'YOU WIN' : 'YOU LOSE'}: {usd(banner.amount)}
+        </div>
+      )}
+      {session !== 0 && (
+        <div className={`cz-sess ${session > 0 ? 'win' : 'lose'}`}>
+          SESSION {session > 0 ? '+' : '−'}{usd(Math.abs(session))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const GAMES = [
   { id: 'roulette_eu', icon: '🎡', name: 'European Roulette', blurb: 'One zero. 2.7% for the house — the merciful wheel.' },
   { id: 'roulette_us', icon: '🛞', name: 'American Roulette', blurb: 'Zero and double-zero. The house bites twice.' },
@@ -112,15 +152,29 @@ export function RouletteGame({ variant, me, refresh }) {
   const [rotation, setRotation] = useState(0);
   const [hot, setHot] = useState([]);
   const rotRef = useRef(0);
+  const { banner, session, flash } = useOutcome();
 
   const loadHot = () => api.get(`/api/casino/${variant}/hot`).then(d => setHot(d.pockets)).catch(() => {});
   useEffect(() => { loadHot(); }, [variant]);
 
-  const add = (type, selection = '') => setBook(b => [...b, { type, selection, amount: amt }]);
   const total = book.reduce((s, b) => s + b.amount, 0);
+  const bankroll = me?.chips ?? 0;
+
+  // Pre-bets stack up on the felt before the spin — never let the book outrun the
+  // bankroll, so the spin can always be paid for.
+  const add = (type, selection = '') => {
+    setErr('');
+    if (total + amt > bankroll) {
+      setErr(`Not enough chips — that bet needs ${usd(total + amt)} but you have ${usd(bankroll)}.`);
+      return;
+    }
+    setBook(b => [...b, { type, selection, amount: amt }]);
+  };
 
   const fire = async () => {
     setErr(''); setSpin(null); setSeed(null);
+    const stake = total;
+    if (stake > bankroll) { setErr('Not enough chips to cover these bets.'); return; }
     try {
       const r = await api.post('/api/casino/play', { game: variant, bets: book });
       // Land the true pocket under the pointer: 5 extra revolutions, always forward.
@@ -133,7 +187,7 @@ export function RouletteGame({ variant, me, refresh }) {
       sfx('bet');
       setTimeout(() => {
         setSpinning(false); setSpin(r.result); setSeed(r.seed); setBook([]);
-        sfx(r.result.total_paid > 0 ? 'win' : 'fold');
+        flash((r.result.total_paid || 0) - stake);
         refresh(); loadHot();
       }, 4100);
     } catch (e) { setErr(e.message); }
@@ -143,6 +197,7 @@ export function RouletteGame({ variant, me, refresh }) {
 
   return (
     <div className="panel">
+      <OutcomeBanner banner={banner} session={session} />
       <div className="row">
         <div style={{ textAlign: 'center' }}>
           <Wheel variant={variant} rotation={rotation} spinning={spinning} />
@@ -184,8 +239,8 @@ export function RouletteGame({ variant, me, refresh }) {
                   <button className="badge" onClick={() => setBook(book.filter((_, j) => j !== i))}>✕</button>
                 </div>
               ))}
-              <button className="btn gold big" style={{ marginTop: 10, width: '100%' }} disabled={spinning || !me} onClick={fire}>
-                {spinning ? 'No more bets…' : `SPIN · ${usd(total)}`}
+              <button className="btn gold big" style={{ marginTop: 10, width: '100%' }} disabled={spinning || !me || total > bankroll} onClick={fire}>
+                {spinning ? 'No more bets…' : total > bankroll ? 'Not enough chips' : `SPIN · ${usd(total)}`}
               </button>
             </div>
           )}
@@ -212,26 +267,34 @@ export function BlackjackGame({ me, refresh }) {
   const [amt, setAmt] = useState(500);
   const [round, setRound] = useState(null);
   const [err, setErr] = useState('');
+  const { banner, session, flash } = useOutcome();
+  const bankroll = me?.chips ?? 0;
 
   useEffect(() => { api.get('/api/casino/blackjack').then(d => d.open && setRound(d.open)).catch(() => {}); }, []);
 
   const deal = async () => {
     setErr('');
-    try { const r = await api.post('/api/casino/start', { game: 'blackjack', amount: amt }); setRound(r); sfx('deal'); refresh(); }
-    catch (e) { setErr(e.message); }
+    if (amt > bankroll) { setErr(`Not enough chips — the buy-in is ${usd(amt)} but you have ${usd(bankroll)}.`); return; }
+    try {
+      const r = await api.post('/api/casino/start', { game: 'blackjack', amount: amt });
+      setRound(r); sfx('deal');
+      if (r.status === 'settled') flash((r.paid || 0) - (r.wagered || 0)); // a natural settles on the deal
+      refresh();
+    } catch (e) { setErr(e.message); }
   };
   const act = async (action) => {
     setErr('');
     try {
       const r = await api.post('/api/casino/act', { round_id: round.round_id, action });
       setRound(r); sfx(action === 'hit' ? 'deal' : 'check');
-      if (r.status === 'settled') { sfx(r.paid > 0 ? 'win' : 'fold'); refresh(); }
+      if (r.status === 'settled') { flash((r.paid || 0) - (r.wagered || 0)); refresh(); }
     } catch (e) { setErr(e.message); }
   };
 
   const v = round?.view;
   return (
     <div className="panel" style={{ padding: 0, overflow: 'hidden', background: 'transparent', border: 'none' }}>
+      <OutcomeBanner banner={banner} session={session} />
       <div className="bj-table">
         <div className="bj-arc">BLACKJACK PAYS 3 TO 2 · DEALER STANDS ON ALL 17s · ⛧</div>
         <div className="bj-zone">
@@ -257,7 +320,7 @@ export function BlackjackGame({ me, refresh }) {
           {(!round || round.status === 'settled') && (
             <>
               <BetInput amt={amt} setAmt={setAmt} />
-              <button className="btn gold" disabled={!me} onClick={deal}>DEAL</button>
+              <button className="btn gold" disabled={!me || amt > bankroll} onClick={deal}>{amt > bankroll ? 'Not enough chips' : 'DEAL'}</button>
             </>
           )}
           {round?.status === 'open' && v?.phase === 'player' && (
@@ -293,6 +356,22 @@ function Die({ value, tumbling }) {
   );
 }
 
+const CRAPS_POINTS = [4, 5, 6, 8, 9, 10];
+const CRAPS_PROPS = [
+  { type: 'any7', label: 'ANY 7', sub: 'any seven', pay: '4:1' },
+  { type: 'yo', label: 'YO · 11', sub: 'eleven', pay: '15:1' },
+  { type: 'anycraps', label: 'ANY CRAPS', sub: '2 · 3 · 12', pay: '7:1' },
+];
+
+// A little stack of casino chips standing on a bet zone.
+function ChipStack({ amount }) {
+  return (
+    <span className="cr-chip" title={usd(amount)}>
+      <i /><i /><i /><b>{usd(amount)}</b>
+    </span>
+  );
+}
+
 export function CrapsGame({ me, refresh }) {
   const [amt, setAmt] = useState(200);
   const [round, setRound] = useState(null);
@@ -300,6 +379,8 @@ export function CrapsGame({ me, refresh }) {
   const [tumbling, setTumbling] = useState(false);
   const [shown, setShown] = useState(null);   // dice faces currently displayed
   const [err, setErr] = useState('');
+  const { banner, session, flash } = useOutcome();
+  const bankroll = me?.chips ?? 0;
 
   useEffect(() => {
     api.get('/api/casino/craps').then(d => {
@@ -307,10 +388,24 @@ export function CrapsGame({ me, refresh }) {
     }).catch(() => {});
   }, []);
 
+  const v = round?.view;
+  const open = round && round.status === 'open';
+  const point = v?.point || null;
+  const pendingFor = (t) => props.filter(p => p.type === t).reduce((s, p) => s + p.amount, 0);
+  const propsTotal = props.reduce((s, p) => s + p.amount, 0);
+
   const comeOut = async () => {
     setErr('');
-    try { const r = await api.post('/api/casino/start', { game: 'craps', amount: amt }); setRound(r); setShown(null); sfx('bet'); refresh(); }
+    if (amt > bankroll) { setErr(`Not enough chips — the pass-line bet is ${usd(amt)} but you have ${usd(bankroll)}.`); return; }
+    try { const r = await api.post('/api/casino/start', { game: 'craps', amount: amt }); setRound(r); setShown(null); setProps([]); sfx('bet'); refresh(); }
     catch (e) { setErr(e.message); }
+  };
+  // Drop a one-roll prop on a zone for the NEXT throw — never past the bankroll.
+  const addProp = (t) => {
+    setErr('');
+    if (!open || tumbling) return;
+    if (amt + propsTotal > bankroll) { setErr(`Not enough chips to add that ${t.toUpperCase().replace('_', ' ')} bet.`); return; }
+    setProps(p => [...p, { type: t, amount: amt }]); sfx('bet');
   };
   const roll = async () => {
     setErr(''); setTumbling(true);
@@ -321,50 +416,83 @@ export function CrapsGame({ me, refresh }) {
         setTumbling(false);
         setRound(r); setProps([]);
         setShown(r.view.rolls[r.view.rolls.length - 1]);
-        if (r.status === 'settled') { sfx(r.view.outcome === 'win' ? 'win' : 'fold'); refresh(); }
+        if (r.status === 'settled') { flash((r.paid || 0) - (r.wagered || 0)); refresh(); }
+        else refresh();
       }, 750);
     } catch (e) { setTumbling(false); setErr(e.message); }
   };
 
-  const v = round?.view;
   const d = shown || [1, 1];
+
   return (
     <div className="panel" style={{ padding: 0, background: 'transparent', border: 'none' }}>
-      <div className="cr-table">
-        <div className="cr-field">FIELD · 2·3·4·9·10·11·12 <i>(2 &amp; 12 PAY DOUBLE)</i></div>
-        <div className="cr-center">
-          <div className={`cr-puck${v?.point ? ' on' : ''}`}>{v?.point ? `ON · ${v.point}` : 'OFF'}</div>
+      <OutcomeBanner banner={banner} session={session} />
+      <div className="cr-table cr-felt">
+        {/* Point boxes — the puck rides the live point. */}
+        <div className="cr-points">
+          {CRAPS_POINTS.map(n => (
+            <div key={n} className={`cr-pt${point === n ? ' on' : ''}`}>
+              <span className="cr-pt-n">{n === 6 ? 'SIX' : n === 9 ? 'NINE' : n}</span>
+              {point === n && <span className="cr-onpuck">ON</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* The dice pit. */}
+        <div className="cr-pit">
+          {!point && <div className="cr-offpuck">OFF</div>}
           <div className="cr-dice">
             <Die value={d[0]} tumbling={tumbling} />
             <Die value={d[1]} tumbling={tumbling} />
           </div>
           {shown && !tumbling && <div className="cr-sum mono">{d[0] + d[1]}</div>}
         </div>
-        <div className="cr-passline">PASS LINE {v ? `· ${usd(v.pass)}` : ''}</div>
+
+        {/* The betting felt — click a zone to place chips for the next roll. */}
+        <button
+          className={`cr-zone field${pendingFor('field') ? ' active' : ''}`}
+          disabled={!open || tumbling}
+          onClick={() => addProp('field')}
+        >
+          <span className="cr-zlabel">FIELD</span>
+          <span className="cr-zsub">2 · 3 · 4 · 9 · 10 · 11 · 12 <em>(2 &amp; 12 pay double)</em></span>
+          {pendingFor('field') > 0 && <ChipStack amount={pendingFor('field')} />}
+        </button>
+        <div className="cr-props">
+          {CRAPS_PROPS.map(p => (
+            <button
+              key={p.type}
+              className={`cr-zone prop${pendingFor(p.type) ? ' active' : ''}`}
+              disabled={!open || tumbling}
+              onClick={() => addProp(p.type)}
+            >
+              <span className="cr-zlabel">{p.label}</span>
+              <span className="cr-zsub">{p.sub} · <em>{p.pay}</em></span>
+              {pendingFor(p.type) > 0 && <ChipStack amount={pendingFor(p.type)} />}
+            </button>
+          ))}
+        </div>
+
+        {/* Pass line — the come-out call to action when the dice are OFF. */}
+        <button
+          className={`cr-pass${open ? ' locked' : ''}`}
+          disabled={open || !me || (!open && amt > bankroll)}
+          onClick={open ? undefined : comeOut}
+        >
+          PASS LINE {open
+            ? `· ${usd(v.pass)} WORKING${point ? ` · POINT ${point}` : ''}`
+            : (amt > bankroll ? '· NOT ENOUGH CHIPS' : `· COME OUT ${usd(amt)}`)}
+        </button>
 
         <div className="cr-rail">
-          {(!round || round.status === 'settled') ? (
-            <>
-              <BetInput amt={amt} setAmt={setAmt} />
-              <button className="btn gold" disabled={!me} onClick={comeOut}>PASS LINE · COME OUT</button>
-            </>
-          ) : (
-            <>
-              {['field', 'any7', 'yo', 'anycraps'].map(t => (
-                <button key={t} className="btn ghost" onClick={() => setProps(p => [...p, { type: t, amount: amt }])}>{t.toUpperCase()}</button>
-              ))}
-              <button className="btn gold big" disabled={tumbling} onClick={roll}>🎲 ROLL</button>
-            </>
-          )}
+          <BetInput amt={amt} setAmt={setAmt} />
+          {open
+            ? <button className="btn gold big" disabled={tumbling} onClick={roll}>🎲 ROLL{propsTotal ? ` · +${usd(propsTotal)}` : ''}</button>
+            : <span className="hint">↑ place the pass line to start the dice</span>}
         </div>
-        {props.map((p, i) => (
-          <div key={i} className="kv" style={{ maxWidth: 420, margin: '4px auto' }}>
-            <span>{p.type} · {usd(p.amount)}</span>
-            <button className="badge" onClick={() => setProps(props.filter((_, j) => j !== i))}>✕</button>
-          </div>
-        ))}
+
         {(v?.last_props || []).map((p, i) => (
-          <div key={i} className="kv" style={{ maxWidth: 420, margin: '4px auto' }}>
+          <div key={i} className="kv" style={{ maxWidth: 460, margin: '4px auto' }}>
             <span>{p.type}</span><span style={{ color: p.won ? 'var(--pk-gold)' : 'var(--pk-dim)' }}>{p.won ? `+${usd(p.paid)}` : `-${usd(p.amount)}`}</span>
           </div>
         ))}
@@ -396,11 +524,14 @@ export function VideoPokerGame({ me, refresh }) {
   const [round, setRound] = useState(null);
   const [held, setHeld] = useState([]);
   const [err, setErr] = useState('');
+  const { banner, session, flash } = useOutcome();
+  const bankroll = me?.chips ?? 0;
 
   useEffect(() => { api.get('/api/casino/videopoker').then(d => d.open && setRound(d.open)).catch(() => {}); }, []);
 
   const deal = async () => {
     setErr(''); setHeld([]);
+    if (amt > bankroll) { setErr(`Not enough chips — the bet is ${usd(amt)} but you have ${usd(bankroll)}.`); return; }
     try { const r = await api.post('/api/casino/start', { game: 'videopoker', amount: amt }); setRound(r); sfx('deal'); refresh(); }
     catch (e) { setErr(e.message); }
   };
@@ -409,7 +540,7 @@ export function VideoPokerGame({ me, refresh }) {
     const mask = held.reduce((m, i) => m | (1 << i), 0);
     try {
       const r = await api.post('/api/casino/act', { round_id: round.round_id, action: 'draw', mask });
-      setRound(r); sfx(r.paid > 0 ? 'win' : 'fold'); refresh();
+      setRound(r); flash((r.paid || 0) - (r.wagered || 0)); refresh();
     } catch (e) { setErr(e.message); }
   };
   const toggle = (i) => round?.status === 'open' && setHeld(h => h.includes(i) ? h.filter(x => x !== i) : [...h, i]);
@@ -418,6 +549,7 @@ export function VideoPokerGame({ me, refresh }) {
   const won = round?.status === 'settled' && round.paid > 0;
   return (
     <div className={`vp-cab${won ? ' win' : ''}`}>
+      <OutcomeBanner banner={banner} session={session} />
       <div className="vp-marquee">⛧ JACKS OR BETTER · FULL PAY 9/6 ⛧</div>
       <div className="vp-glass">
         {VP_LADDER.map(([k, label, pay]) => (
@@ -456,7 +588,7 @@ export function VideoPokerGame({ me, refresh }) {
         ) : (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center' }}>
             <BetInput amt={amt} setAmt={setAmt} />
-            <button className="vp-draw" disabled={!me} onClick={deal}>DEAL</button>
+            <button className="vp-draw" disabled={!me || amt > bankroll} onClick={deal}>{amt > bankroll ? 'NO CHIPS' : 'DEAL'}</button>
           </div>
         )}
       </div>
@@ -475,9 +607,13 @@ export function SlotsGame({ me, refresh }) {
   const [seed, setSeed] = useState(null);
   const [rolling, setRolling] = useState(false);
   const [err, setErr] = useState('');
+  const { banner, session, flash } = useOutcome();
+  const bankroll = me?.chips ?? 0;
 
   const pull = async () => {
-    setErr(''); setRes(null); setRolling(true);
+    setErr(''); setRes(null);
+    if (amt > bankroll) { setErr(`Not enough chips — the pull is ${usd(amt)} but you have ${usd(bankroll)}.`); return; }
+    setRolling(true);
     sfx('bet');
     const flicker = setInterval(() => {
       setReels(['🍒', '🍋', '🔔', '🐍', '7️⃣', '💀', '⛧'].sort(() => Math.random() - 0.5).slice(0, 3));
@@ -487,7 +623,7 @@ export function SlotsGame({ me, refresh }) {
       setTimeout(() => {
         clearInterval(flicker);
         setReels(r.result.reels); setRes(r.result); setSeed(r.seed); setRolling(false);
-        sfx(r.result.paid > amt ? 'win' : r.result.paid > 0 ? 'check' : 'fold');
+        flash((r.result.paid || 0) - amt);
         refresh();
       }, 700);
     } catch (e) { clearInterval(flicker); setRolling(false); setErr(e.message); }
@@ -495,6 +631,7 @@ export function SlotsGame({ me, refresh }) {
 
   return (
     <div className="vp-cab" style={{ maxWidth: 480 }}>
+      <OutcomeBanner banner={banner} session={session} />
       <div className="vp-marquee">⛧ BEAST REELS ⛧</div>
       <div className="vp-screen" style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 64, letterSpacing: 18, margin: '14px 0', filter: rolling ? 'blur(2px)' : 'none' }}>
@@ -504,7 +641,7 @@ export function SlotsGame({ me, refresh }) {
       </div>
       <div className="vp-deck" style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center' }}>
         <BetInput amt={amt} setAmt={setAmt} />
-        <button className="vp-draw" disabled={rolling || !me} onClick={pull}>{rolling ? '…' : 'PULL'}</button>
+        <button className="vp-draw" disabled={rolling || !me || amt > bankroll} onClick={pull}>{rolling ? '…' : amt > bankroll ? 'NO CHIPS' : 'PULL'}</button>
       </div>
       <div className="hint" style={{ textAlign: 'center', paddingBottom: 10 }}>⛧ 150× · 💀 60× · 7️⃣ 40× · 🐍 14× · 🔔 10× · 🍋 5× · 🍒 3× · two 🍒 2× · one 🍒 half back</div>
       <div style={{ textAlign: 'center', paddingBottom: 10 }}><SeedLine seed={seed} /></div>

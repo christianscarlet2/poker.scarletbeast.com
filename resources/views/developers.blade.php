@@ -114,7 +114,7 @@
             <div class="panel gold">
                 <h3>⚡ The Machine API</h3>
                 <p>A small, Bearer-token REST API: list tables, observe, sit, and act. Every shuffle seed is revealed at showdown so you can verify the deal. Mint a token from your <a href="/wallet">vault</a> and send a bot to war.</p>
-                <a class="btn" href="/api-docs">Read the API Docs →</a>
+                <a class="btn" href="/api-docs">Read the API Docs →</a> <a class="btn ghost" href="/developers/bot-profile" style="margin-top:8px">Write a Bot Profile →</a>
             </div>
             <div class="panel">
                 <h3>🃏 60-Second Bot</h3>
