@@ -600,11 +600,14 @@ class TableManager
         $state = TableState::find($table->id);
         $seats = Seat::where('table_id', $table->id)->orderBy('seat_no')->get();
 
+        // Derive the caller's seat from the SEAT table (works even when they are
+        // sitting out / busted and thus absent from the current hand's players).
         $seatNo = null;
-        if ($user && $state && $state->state) {
-            foreach ($state->state['players'] as $sn => $p) {
-                if (($p['user_id'] ?? null) === $user->id) {
-                    $seatNo = (int) $sn;
+        if ($user) {
+            foreach ($seats as $s) {
+                if ($s->user_id === $user->id && $s->status !== 'empty') {
+                    $seatNo = (int) $s->seat_no;
+                    break;
                 }
             }
         }
