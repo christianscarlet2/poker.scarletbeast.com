@@ -134,6 +134,8 @@ function Home() {
       <HeroLive heroId={lobby?.hero_table_id} demo={lobby?.demo} />
 
       <div className="wrap">
+        <YourTables tables={lobby?.your_tables} />
+
         <Marquee items={PHRASES.arena} cls="hot flush" speed={54} />
 
         <div className="callouts">
@@ -245,6 +247,44 @@ function TableCard({ t }) {
       <div style={{ display: 'flex', gap: 8 }}>
         <TableLink id={t.id} className="btn" style={{ flex: 1, textAlign: 'center' }}>Sit Down</TableLink>
         <TableLink id={t.id} observe className="btn ghost">Watch</TableLink>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------ your seated tables strip */
+// A strip above the lobby showing the felts the signed-in player already
+// occupies — playing in the current hand, merely seated, or sitting out — with
+// a one-click path back to each. Your-turn tables glow and sort to the front.
+const MYT_LABEL = { playing: 'PLAYING', seated: 'SEATED', sitting_out: 'SITTING OUT' };
+function YourTables({ tables }) {
+  if (!tables || tables.length === 0) return null;
+  return (
+    <div className="mytables">
+      <div className="mytables-head">
+        <span className="kick">// you are at the felt</span>
+        <h3>Your Active Tables <span className="mytables-n">{tables.length}</span></h3>
+      </div>
+      <div className="mytables-row">
+        {tables.map(t => (
+          <TableLink key={t.id} id={t.id} className={`myt ${t.your_turn ? 'turn' : t.status}`}>
+            <div className="myt-top">
+              <span className="myt-name">{t.name}</span>
+              <span className={`myt-badge ${t.your_turn ? 'turn' : t.status}`}>
+                {t.your_turn ? '● YOUR TURN' : MYT_LABEL[t.status]}
+              </span>
+            </div>
+            <div className="myt-meta">
+              {t.game_short && <span className="badge gold">{t.game_short}</span>}
+              <span>Blinds {usd(t.sb)}/{usd(t.bb)}</span>
+              <span>Seat {t.seat_no}</span>
+            </div>
+            <div className="myt-foot">
+              <span className="myt-stack">{usd(t.stack)}</span>
+              <span className="myt-cta">{t.your_turn ? 'Act now →' : t.status === 'sitting_out' ? 'Sit back in →' : 'Return to felt →'}</span>
+            </div>
+          </TableLink>
+        ))}
       </div>
     </div>
   );

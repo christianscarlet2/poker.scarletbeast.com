@@ -136,6 +136,7 @@ class TableManager
             }
             $seat->stack += $add;
             $seat->status = 'sitting';
+            $seat->sit_out_button_passes = 0; // back in the game — reset the lap clock
             $seat->save();
             return $seat;
         });
@@ -168,7 +169,7 @@ class TableManager
         if (!$seat->is_bot && $seat->user_id && $seat->stack > 0) {
             Bankroll::adjust($seat->user_id, $seat->stack, 'cash_out', "Stand up from table {$seat->table_id}");
         }
-        $seat->update(['user_id' => null, 'stack' => 0, 'status' => 'empty', 'is_bot' => false]);
+        $seat->update(['user_id' => null, 'stack' => 0, 'status' => 'empty', 'is_bot' => false, 'sit_out_button_passes' => 0]);
     }
 
     /* ------------------------------------------------------------- hand flow */
@@ -202,6 +203,7 @@ class TableManager
             $prevButton = $state->state['button'] ?? null;
             $seatNos = $seats->pluck('seat_no')->all();
             $button = $this->nextButton($prevButton, $seatNos);
+            $this->ageSitOuts($table, $prevButton, $button);
 
             $players = [];
             foreach ($seats as $s) {
@@ -249,6 +251,45 @@ class TableManager
             }
         }
         return $seatNos[0];
+    }
+
+    /** Two laps of the button while sitting out, and the felt frees the chair. */
+    private const SIT_OUT_LAP_LIMIT = 2;
+
+    /**
+     * Age every sat-out seat the button just swept past. When the dealer chip has
+     * lapped a player twice (this hand it passed them, taking the count to the
+     * limit), they are stood up and the seat is freed for someone who will play.
+     * Cash tables only — tournaments never let you leave.
+     */
+    private function ageSitOuts(PokerTable $table, ?int $prevButton, int $button): void
+    {
+        if ($table->tournament_id || $prevButton === null) {
+            return;
+        }
+        $outs = Seat::where('table_id', $table->id)->where('status', 'sitting_out')->get();
+        foreach ($outs as $seat) {
+            if (! $this->buttonSweptPast($prevButton, $button, $seat->seat_no)) {
+                continue;
+            }
+            $passes = (int) $seat->sit_out_button_passes + 1;
+            if ($passes >= self::SIT_OUT_LAP_LIMIT) {
+                $this->cashOutSeat($seat); // sat out two orbits — leave the table
+            } else {
+                $seat->update(['sit_out_button_passes' => $passes]);
+            }
+        }
+    }
+
+    /** Did the button, moving from $prev to $cur, sweep across $seat (cyclically)? */
+    private function buttonSweptPast(int $prev, int $cur, int $seat): bool
+    {
+        if ($prev === $cur) {
+            return false;
+        }
+        return $prev < $cur
+            ? ($seat > $prev && $seat <= $cur)        // straight run up the seats
+            : ($seat > $prev || $seat <= $cur);       // wrapped past the top seat
     }
 
     /** A human or bot acts. Returns the fresh redacted view. */
@@ -388,6 +429,7 @@ class TableManager
         }
         $prevButton = $state->state['button'] ?? null;
         $button = $this->nextButton($prevButton, $seats->pluck('seat_no')->all());
+        $this->ageSitOuts($table, $prevButton, $button);
 
         $players = [];
         foreach ($seats as $s) {
@@ -571,6 +613,24 @@ class TableManager
             ? HandEngine::fromState($state->state)->view($seatNo)
             : null;
 
+        // A seat is "bot-controlled" if it's a house bot OR its human owner has a
+        // machine (Hiss / API) actively polling in the last 10s. Reflect that so the
+        // felt shows a bot is playing rather than a human.
+        $botCutoff = now()->subSeconds(10);
+        $botSeat = [];
+        foreach ($seats as $s) {
+            $botSeat[$s->seat_no] = $s->is_bot
+                || ($s->user && $s->user->bot_seen_at && $s->user->bot_seen_at->gt($botCutoff));
+        }
+        if ($hand && !empty($hand['players'])) {
+            foreach ($hand['players'] as $sn => &$pp) {
+                if (!empty($botSeat[$sn])) {
+                    $pp['is_bot'] = true;
+                }
+            }
+            unset($pp);
+        }
+
         return [
             'table' => [
                 'id' => $table->id,
@@ -590,7 +650,7 @@ class TableManager
                 'user_id' => $s->user_id,
                 'name' => $s->user?->username ?? $s->user?->name,
                 'avatar' => $s->user?->avatar,
-                'is_bot' => $s->is_bot,
+                'is_bot' => (bool) ($botSeat[$s->seat_no] ?? $s->is_bot),
                 'control' => $s->is_bot ? 'bot' : 'human',
                 'stack' => $s->stack,
                 'status' => $s->status,

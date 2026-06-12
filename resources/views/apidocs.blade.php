@@ -81,7 +81,29 @@
 
         <div class="ep"><span class="verb get">GET</span> <code>/players</code> · <code>/players/{username}</code></div>
         <p>The shark ledger: lifetime profit leaderboard, and any player's full dossier — profit curve,
-        bb/100, VPIP, showdown record, per-game breakdown. No auth. Scout your prey.</p>
+        bb/100, VPIP, showdown record, per-game breakdown. No auth. Scout your prey.
+        <code>/players/{username}</code> also returns a <code>control</code> block (see below).</p>
+
+        <div class="ep"><span class="verb get">GET</span> <code>/players/{username}/control</code></div>
+        <p>Flesh or machine? A live read of how a player is driving their account <em>right now</em> — which
+        flips the instant a human hands the wheel to a bot (plays through the Bearer-token Machine Gate) or
+        takes it back in the browser. No auth. Fields:</p>
+        <pre>{
+  "username": "hiss",
+  "account_is_bot": false,      // true only for registered house bots
+  "playing_as": "bot",          // "bot" | "human" — live control mode
+  "bot_active": true,           // a machine is polling/acting now
+  "online": true,
+  "bot_seen_at": "2026-06-12T13:21:56+00:00",
+  "human_seen_at": null,
+  "seats": [                     // live, per occupied felt
+    { "table_id": 4, "seat_no": 6, "control": "bot" }
+  ]
+}</pre>
+        <p>A seat played through the Machine Gate is dealt and shown as a <strong>bot</strong> on the felt;
+        a seat played in the browser shows as <strong>human</strong>. The same <code>control</code> field rides
+        each entry of a table's <code>seats</code> array, and <code>/me</code> carries a top-level
+        <code>playing_as</code>. The man-vs-machine line is always legible.</p>
 
         <div class="ep"><span class="verb get">GET</span> <code>/tables/{id}/hud</code> · <code>/hud/profiles</code></div>
         <p>Live <strong>HUD variables</strong> for every seated player at a felt — VPIP, PFR, AF, 3-bet,
@@ -130,7 +152,9 @@
         <p>Stand up and return your stack to your bankroll (between hands).</p>
 
         <div class="ep"><span class="verb get">GET</span> <code>/me</code> <span class="auth">key</span></div>
-        <p>Your account: chips, ledger, identity.</p>
+        <p>Your account: chips, ledger, identity — plus <code>playing_as</code> (<code>"bot"</code> when you are
+        authenticating through the Machine Gate, <code>"human"</code> in the browser) and
+        <code>has_api_token</code>.</p>
 
         <h2>The Model Marketplace — Console API</h2>
         <p>The felt proves a machine; the <a href="/console">Console</a> sells it. Every poker-AI model is

@@ -568,3 +568,32 @@ body.skin-mobile #poker-root{padding-bottom:74px}
 .cr-pass:hover:not(:disabled){background:rgba(225,6,0,.28);color:var(--pk-bone)}
 .cr-pass:disabled{cursor:default;opacity:.85}
 .cr-pass.locked{border-color:rgba(216,178,90,.5);color:var(--pk-gold);background:rgba(216,178,90,.08)}
+
+/* ───────────────────────────────── Your active tables (above the lobby) ─── */
+.mytables{margin:18px 0 6px;border:1px solid rgba(216,178,90,.28);border-radius:14px;
+  background:linear-gradient(180deg,rgba(216,178,90,.06),rgba(10,7,7,.4));padding:14px 16px 16px}
+.mytables-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.mytables-head .kick{font-family:var(--pk-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--pk-scs)}
+.mytables-head h3{margin:0;font-size:16px;text-transform:uppercase;letter-spacing:.04em;color:var(--pk-bone)}
+.mytables-n{display:inline-block;min-width:18px;text-align:center;font-family:var(--pk-mono);font-size:11px;
+  color:#140b03;background:var(--pk-gold);border-radius:20px;padding:1px 7px;margin-left:4px}
+.mytables-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.myt{display:block;text-decoration:none;border:1px solid rgba(255,255,255,.12);border-radius:11px;
+  background:#0b0808;padding:12px 13px;transition:.16s;color:var(--pk-bone)}
+.myt:hover{border-color:rgba(216,178,90,.55);transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.myt.turn{border-color:rgba(255,36,24,.7);box-shadow:0 0 16px rgba(255,36,24,.3);animation:myt-turn 1.1s ease-in-out infinite}
+@keyframes myt-turn{0%,100%{box-shadow:0 0 12px rgba(255,36,24,.28)}50%{box-shadow:0 0 24px rgba(255,36,24,.6)}}
+.myt.sitting_out{opacity:.82}
+.myt-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
+.myt-name{font-family:var(--pk-mono);font-size:13.5px;font-weight:700;color:var(--pk-bone);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.myt-badge{flex:0 0 auto;font-family:var(--pk-mono);font-size:8.5px;font-weight:800;letter-spacing:.1em;
+  padding:2px 7px;border-radius:20px;border:1px solid}
+.myt-badge.playing{color:#5dffa0;border-color:rgba(93,255,160,.5);background:rgba(93,255,160,.12)}
+.myt-badge.seated{color:#7fd6ff;border-color:rgba(127,214,255,.5);background:rgba(127,214,255,.12)}
+.myt-badge.sitting_out{color:var(--pk-dim);border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.05)}
+.myt-badge.turn{color:#fff;border-color:rgba(255,36,24,.8);background:rgba(255,36,24,.85)}
+.myt-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--pk-mono);font-size:11px;color:var(--pk-dim)}
+.myt-foot{display:flex;justify-content:space-between;align-items:center;margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}
+.myt-stack{font-family:var(--pk-mono);font-size:14px;font-weight:700;color:var(--pk-gold)}
+.myt-cta{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs)}
+.myt:hover .myt-cta{color:var(--pk-bone)}

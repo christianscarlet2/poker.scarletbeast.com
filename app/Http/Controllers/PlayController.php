@@ -92,7 +92,57 @@ class PlayController extends Controller
 
         $payload['demo'] = \App\Services\DemoMode::live();
 
+        // Per-viewer: the felts this player is parked at — playing, seated, or
+        // sitting out — surfaced as a strip above the lobby. Computed outside the
+        // shared cache since it differs for every viewer.
+        $payload['your_tables'] = $this->yourTables($request->user());
+
         return response()->json($payload);
+    }
+
+    /** The tables the player currently occupies, ranked by how much they need attention. */
+    private function yourTables(?\App\Models\User $user): array
+    {
+        if (! $user) {
+            return [];
+        }
+        $seats = Seat::with('table.stake')->where('user_id', $user->id)
+            ->where('status', '!=', 'empty')->get();
+
+        $out = [];
+        foreach ($seats as $s) {
+            $t = $s->table;
+            if (! $t) {
+                continue;
+            }
+            $st = \App\Models\TableState::find($t->id)?->state;
+            $inProgress = $st && (($st['street'] ?? 'complete') !== 'complete');
+            $inHand = $inProgress && (bool) ($st['players'][$s->seat_no]['in_hand'] ?? false);
+            $yourTurn = $inProgress && (($st['to_act'] ?? null) === $s->seat_no);
+            $status = $s->status === 'sitting_out' ? 'sitting_out' : ($inHand ? 'playing' : 'seated');
+            $gt = \App\Poker\GameType::get($t->game_type ?? 'nlhe');
+
+            $out[] = [
+                'id' => $t->id,
+                'name' => $t->name,
+                'game_short' => $gt['short'],
+                'stake' => $t->stake?->name,
+                'sb' => $t->small_blind,
+                'bb' => $t->big_blind,
+                'seat_no' => $s->seat_no,
+                'stack' => $s->stack,
+                'status' => $status,        // playing | seated | sitting_out
+                'your_turn' => $yourTurn,
+                'hand_no' => $t->hand_no,
+            ];
+        }
+
+        // Your turn first, then playing, then merely seated, then sitting out.
+        $prio = fn ($r) => ($r['your_turn'] ? 0 : 10)
+            + ['playing' => 1, 'seated' => 2, 'sitting_out' => 3][$r['status']];
+        usort($out, fn ($a, $b) => $prio($a) <=> $prio($b));
+
+        return $out;
     }
 
     public function tableState(Request $request, PokerTable $table)
