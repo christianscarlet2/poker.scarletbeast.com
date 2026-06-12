@@ -73,22 +73,7 @@ class GlobalWallet
             $inPlay = (int) \App\Models\Seat::where('status', '!=', 'empty')->sum('stack');
 
             // Human-readable label + description for each ledger movement type.
-            $labels = [
-                'grant'         => ['Owner grants', 'Chips minted to an account directly by the house'],
-                'bonus'         => ['Promo bonuses', 'Bonus codes redeemed into player bankrolls'],
-                'deposit'       => ['Crypto deposits', 'BTC / ETH funded onto the felt'],
-                'withdraw'      => ['Withdrawals', 'Bankroll cashed out to a chain address'],
-                'buy_in'        => ['Table buy-ins', 'Chips moved from bankroll onto a seat'],
-                'cash_out'      => ['Table cash-outs', 'Chips moved from a seat back to bankroll'],
-                'rake'          => ['House rake', "The house's cut of each flopped pot"],
-                'rakeback'      => ['Rakeback returned', 'Rake paid back to the players who generated it'],
-                'affiliate'     => ['Affiliate payouts', 'Commissions credited to recruiters'],
-                'casino_bet'    => ['Casino wagers', 'Stakes placed at the casino games (roulette, etc.)'],
-                'casino_win'    => ['Casino payouts', 'Winnings paid from the casino games'],
-                'side_bet'      => ['Side bets placed', 'Rail wagers staked on live hands'],
-                'side_bet_win'  => ['Side-bet payouts', 'Winning rail wagers'],
-                'side_bet_void' => ['Side bets refunded', 'Voided rail wagers returned'],
-            ];
+            $labels = $this->typeLabels();
 
             $rows = LedgerEntry::selectRaw(
                 'type, COUNT(*) n, SUM(delta) net, SUM(GREATEST(delta,0)) inflow, SUM(LEAST(delta,0)) outflow'
@@ -124,6 +109,62 @@ class GlobalWallet
                 'flows' => $flows,
                 'as_of' => now()->toIso8601String(),
             ];
+        });
+    }
+
+    /** Label + plain-English description for each ledger movement type. */
+    private function typeLabels(): array
+    {
+        return [
+            'grant'         => ['Owner grants', 'Chips minted to an account directly by the house'],
+            'bonus'         => ['Promo bonuses', 'Bonus codes redeemed into player bankrolls'],
+            'deposit'       => ['Crypto deposits', 'BTC / ETH funded onto the felt'],
+            'withdraw'      => ['Withdrawals', 'Bankroll cashed out to a chain address'],
+            'buy_in'        => ['Table buy-ins', 'Chips moved from bankroll onto a seat'],
+            'cash_out'      => ['Table cash-outs', 'Chips moved from a seat back to bankroll'],
+            'rake'          => ['House rake', "The house's cut of each flopped pot"],
+            'rakeback'      => ['Rakeback returned', 'Rake paid back to the players who generated it'],
+            'affiliate'     => ['Affiliate payouts', 'Commissions credited to recruiters'],
+            'casino_bet'    => ['Casino wagers', 'Stakes placed at the casino games (roulette, etc.)'],
+            'casino_win'    => ['Casino payouts', 'Winnings paid from the casino games'],
+            'side_bet'      => ['Side bets placed', 'Rail wagers staked on live hands'],
+            'side_bet_win'  => ['Side-bet payouts', 'Winning rail wagers'],
+            'side_bet_void' => ['Side bets refunded', 'Voided rail wagers returned'],
+        ];
+    }
+
+    /**
+     * Every individual ledger movement, newest first — the raw line items behind
+     * the grouped totals. Each is classed income (a credit, delta >= 0) or
+     * expense (a debit) from the holding balance's perspective.
+     */
+    public function ledgerItems(int $limit = 2000): array
+    {
+        return Cache::remember('global_wallet_ledger', 30, function () use ($limit) {
+            $labels = $this->typeLabels();
+            $rows = LedgerEntry::query()
+                ->leftJoin('users', 'users.id', '=', 'ledger_entries.user_id')
+                ->orderByDesc('ledger_entries.id')
+                ->limit($limit)
+                ->get([
+                    'ledger_entries.id', 'ledger_entries.type', 'ledger_entries.delta',
+                    'ledger_entries.memo', 'ledger_entries.created_at', 'users.username',
+                ]);
+
+            return $rows->map(function ($r) use ($labels) {
+                [$label] = $labels[$r->type] ?? [ucwords(str_replace('_', ' ', $r->type))];
+                $delta = (int) $r->delta;
+                return [
+                    'id'          => (int) $r->id,
+                    'date'        => optional($r->created_at)->toIso8601String(),
+                    'type'        => $r->type,
+                    'source'      => $label,
+                    'memo'        => $r->memo,
+                    'account'     => $r->username,
+                    'amount_cents' => $delta,
+                    'kind'        => $delta >= 0 ? 'income' : 'expense',
+                ];
+            })->all();
         });
     }
 

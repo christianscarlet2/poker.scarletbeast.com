@@ -137,6 +137,7 @@ Route::prefix('api')->group(function () {
 
     // Global wallet — public estate ticker (house cash on hand + rakeback).
     Route::get('/wallet/global', [\App\Http\Controllers\GlobalWalletController::class, 'show']);
+    Route::get('/wallet/ledger', [\App\Http\Controllers\GlobalWalletController::class, 'ledger']);
 
     // networkedin public reads
     Route::get('/networkedin/feed', [\App\Http\Controllers\NetworkedinController::class, 'feed']);

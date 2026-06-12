@@ -16,6 +16,12 @@ class GlobalWalletController extends Controller
         return response()->json($this->wallet->publicView());
     }
 
+    /** Every individual ledger line item (newest first) for the public ledger. */
+    public function ledger()
+    {
+        return response()->json(['items' => $this->wallet->ledgerItems()]);
+    }
+
     /** Trigger an Akaunting sync (admin/cron). */
     public function sync()
     {
