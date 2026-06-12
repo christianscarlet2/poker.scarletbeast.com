@@ -869,7 +869,11 @@ function RewardsPage() {
   const [code, setCode] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const load = () => api.get('/api/rewards').then(setD).catch(e => setErr(e.message));
+  const load = () => api.get('/api/rewards').then(setD).catch(e => {
+    // A 401 means the session lapsed — drop to the sign-in prompt instead of
+    // showing the raw "Unauthenticated." error. refresh() clears `me`.
+    if (e.status === 401) { setErr(''); refresh(); } else setErr(e.message);
+  });
   useEffect(() => { if (me) load(); }, [me]);
 
   if (!me) return <div className="wrap"><div className="center-msg">Enter first. <A href="/login">Sign in.</A></div></div>;

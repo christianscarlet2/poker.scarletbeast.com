@@ -21,48 +21,62 @@ class PlayController extends Controller
     /** Lobby: tables grouped by arena type and stake, plus a live hero felt. */
     public function lobby(Request $request)
     {
-        $tables = PokerTable::with('stake')
-            ->where('status', 'active')
-            ->orderBy('stake_id')->orderBy('id')->get();
+        // The lobby is public and identical for everyone, and the SPA polls it
+        // every few seconds — so cache the computed payload for a beat. This
+        // turns a stampede of identical reads into one cheap recompute per tick.
+        $payload = \Illuminate\Support\Facades\Cache::remember('lobby:v3', 3, function () {
+            $tables = PokerTable::with('stake')
+                ->where('status', 'active')
+                ->orderBy('stake_id')->orderBy('id')->get();
 
-        $rows = $tables->map(function (PokerTable $t) {
-            $seated = Seat::where('table_id', $t->id)->where('status', '!=', 'empty')->get();
-            $players = $seated->count();
-            $game = $t->game_type ?? 'nlhe';
+            // One query for all seat occupancy across every table (was N+1).
+            $seatsByTable = Seat::where('status', '!=', 'empty')
+                ->whereIn('table_id', $tables->pluck('id'))
+                ->get(['table_id', 'is_bot'])
+                ->groupBy('table_id');
+
+            $rows = $tables->map(function (PokerTable $t) use ($seatsByTable) {
+                $seated = $seatsByTable->get($t->id) ?? collect();
+                $game = $t->game_type ?? 'nlhe';
+                $gt = \App\Poker\GameType::get($game);
+                return [
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'type' => $t->table_type,
+                    'game' => $game,
+                    'game_name' => $gt['name'],
+                    'game_short' => $gt['short'],
+                    'stake' => $t->stake?->name,
+                    'sb' => $t->small_blind,
+                    'bb' => $t->big_blind,
+                    'min_buy_in' => $t->min_buy_in,
+                    'max_buy_in' => $t->max_buy_in,
+                    'max_seats' => $t->max_seats,
+                    'players' => $seated->count(),
+                    'humans' => $seated->where('is_bot', false)->count(),
+                    'bots' => $seated->where('is_bot', true)->count(),
+                    'hand_no' => $t->hand_no,
+                ];
+            });
+
+            // Hero: the busiest live felt right now — the front-page brawl.
+            $hero = $rows->sortByDesc(fn ($r) => $r['players'] * 10 + $r['hand_no'])->first();
+
             return [
-                'id' => $t->id,
-                'name' => $t->name,
-                'type' => $t->table_type,
-                'game' => $game,
-                'game_name' => \App\Poker\GameType::get($game)['name'],
-                'game_short' => \App\Poker\GameType::get($game)['short'],
-                'stake' => $t->stake?->name,
-                'sb' => $t->small_blind,
-                'bb' => $t->big_blind,
-                'min_buy_in' => $t->min_buy_in,
-                'max_buy_in' => $t->max_buy_in,
-                'max_seats' => $t->max_seats,
-                'players' => $players,
-                'humans' => $seated->where('is_bot', false)->count(),
-                'bots' => $seated->where('is_bot', true)->count(),
-                'hand_no' => $t->hand_no,
-                'avg_pot' => (int) Hand::where('table_id', $t->id)->latest('id')->limit(20)->avg('pot'),
+                // Plain array (not a Collection) so it survives cache serialization.
+                'tables' => $rows->values()->all(),
+                'hero_table_id' => $hero['id'] ?? null,
+                'types' => [
+                    'human_vs_machine' => 'Human vs Machine',
+                    'machine_only' => 'Machine Only',
+                    'human_only' => 'Human Only',
+                ],
             ];
         });
 
-        // Hero: the busiest live felt right now — the front-page brawl.
-        $hero = $rows->sortByDesc(fn ($r) => $r['players'] * 10 + $r['hand_no'])->first();
+        $payload['demo'] = \App\Services\DemoMode::live();
 
-        return response()->json([
-            'tables' => $rows->values(),
-            'hero_table_id' => $hero['id'] ?? null,
-            'demo' => \App\Services\DemoMode::live(),
-            'types' => [
-                'human_vs_machine' => 'Human vs Machine',
-                'machine_only' => 'Machine Only',
-                'human_only' => 'Human Only',
-            ],
-        ]);
+        return response()->json($payload);
     }
 
     public function tableState(Request $request, PokerTable $table)
