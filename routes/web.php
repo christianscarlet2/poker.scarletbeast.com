@@ -168,6 +168,8 @@ Route::prefix('api')->middleware('auth')->group(function () {
 
     Route::post('/hud/upload', [\App\Http\Controllers\HudController::class, 'upload']);
     Route::post('/hud/select', [\App\Http\Controllers\HudController::class, 'select']);
+    Route::post('/hud/profiles', [\App\Http\Controllers\HudController::class, 'store']);
+    Route::put('/hud/profiles/{profile}', [\App\Http\Controllers\HudController::class, 'update']);
     Route::delete('/hud/profiles/{profile}', [\App\Http\Controllers\HudController::class, 'destroy']);
 
     Route::post('/tournaments/{tournament}/register', [\App\Http\Controllers\TournamentController::class, 'register']);

@@ -55,6 +55,75 @@ class HudController extends Controller
         return response()->json(['ok' => true, 'profile' => $profile]);
     }
 
+    /** Create a custom profile from scratch in the in-browser builder. */
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'rows' => ['required', 'array', 'min:1'],
+        ]);
+        $rows = $this->cleanRows($data['rows']);
+        if (empty($rows)) {
+            return response()->json(['error' => 'Add at least one stat to the layout.'], 422);
+        }
+        $profile = HudProfile::create([
+            'user_id' => $request->user()->id,
+            'name' => $data['name'],
+            'source' => 'builder',
+            'rows' => $rows,
+        ]);
+        $request->user()->update(['hud_profile_id' => $profile->id]); // saving arms it
+        return response()->json(['ok' => true, 'profile' => $profile]);
+    }
+
+    /** Update one of your own custom profiles from the builder. */
+    public function update(Request $request, HudProfile $profile)
+    {
+        if ($profile->user_id !== $request->user()->id) {
+            return response()->json(['error' => 'Not yours to edit.'], 403);
+        }
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'rows' => ['required', 'array', 'min:1'],
+        ]);
+        $rows = $this->cleanRows($data['rows']);
+        if (empty($rows)) {
+            return response()->json(['error' => 'Add at least one stat to the layout.'], 422);
+        }
+        $profile->update(['name' => $data['name'], 'rows' => $rows]);
+        return response()->json(['ok' => true, 'profile' => $profile->fresh()]);
+    }
+
+    /**
+     * Sanitise builder rows: keep only renderable stats (those the engine can
+     * compute, i.e. present in the PT4 map), trim labels, drop empty rows, and
+     * cap the grid so a layout can never bloat the felt.
+     */
+    private function cleanRows(array $rows): array
+    {
+        $known = array_keys(HudStats::MAP);
+        $out = [];
+        foreach (array_slice($rows, 0, 8) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $cells = [];
+            foreach (array_slice($row, 0, 12) as $cell) {
+                $stat = is_array($cell) ? ($cell['stat'] ?? null) : null;
+                if (!is_string($stat) || !in_array($stat, $known, true)) {
+                    continue;
+                }
+                $label = is_array($cell) ? ($cell['label'] ?? null) : null;
+                $label = is_string($label) && trim($label) !== '' ? mb_substr(trim($label), 0, 6) : null;
+                $cells[] = ['stat' => $stat, 'label' => $label];
+            }
+            if ($cells) {
+                $out[] = $cells;
+            }
+        }
+        return $out;
+    }
+
     /** Choose the active profile (null = HUD off). */
     public function select(Request $request)
     {
@@ -81,6 +150,32 @@ class HudController extends Controller
         }
         $profile->delete();
         return response()->json(['ok' => true]);
+    }
+
+    /** Token-friendly import: a .pt4hud sent as base64 JSON (used by Hiss). */
+    public function import(Request $request)
+    {
+        $data = $request->validate([
+            'content_b64' => ['required', 'string'],
+            'name' => ['nullable', 'string', 'max:120'],
+        ]);
+        $raw = base64_decode($data['content_b64'], true);
+        if ($raw === false) {
+            return response()->json(['error' => 'Invalid base64 content.'], 422);
+        }
+        try {
+            $parsed = Pt4Hud::parse($raw);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+        $profile = HudProfile::create([
+            'user_id' => $request->user()->id,
+            'name' => $data['name'] ?: $parsed['name'],
+            'source' => ($data['name'] ?: $parsed['name']) . '.pt4hud',
+            'rows' => $parsed['rows'],
+        ]);
+        $request->user()->update(['hud_profile_id' => $profile->id]);
+        return response()->json(['ok' => true, 'profile' => ['id' => $profile->id, 'name' => $profile->name]]);
     }
 
     /**

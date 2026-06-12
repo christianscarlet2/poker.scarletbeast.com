@@ -1056,8 +1056,141 @@ function StatsGuidePage() {
 }
 
 /* -------------------------------------------------------------- HUD desk */
+// A short, friendly tag for a stat chip (VPIP, PFR, 3BET…), derived from the
+// computed key. Falls back to the key itself.
+function statTag(key) {
+  const t = (STAT_INFO[key]?.title || key).split('—')[0].trim();
+  return t.length <= 7 ? t.toUpperCase() : key.toUpperCase();
+}
+
+// Drag-and-drop HUD layout builder. Rows of stat chips, dragged from a palette,
+// reordered, relabeled, and saved as a custom profile. `statKeys` is the PT4
+// name → computed key map; the palette offers one chip per computed key.
+function HudBuilder({ initial, statKeys, onSave, onCancel, saving }) {
+  const [name, setName] = useState(initial.name || 'My HUD');
+  const [rows, setRows] = useState(() =>
+    (initial.rows && initial.rows.length ? initial.rows.map(r => r.map(c => ({ ...c }))) : [[]]));
+  const [edit, setEdit] = useState(null);   // {r,c} cell whose label is being edited
+  const drag = React.useRef(null);
+  const keyOf = (stat) => statKeys[stat] || stat;
+
+  // One palette chip per distinct computed key, in map order.
+  const palette = React.useMemo(() => {
+    const seen = {}; const list = [];
+    for (const [stat, key] of Object.entries(statKeys || {})) {
+      if (!seen[key]) { seen[key] = true; list.push({ stat, key }); }
+    }
+    return list;
+  }, [statKeys]);
+
+  const clone = (rs) => rs.map(r => r.map(c => ({ ...c })));
+  const dropInto = (targetR, targetC) => {
+    const d = drag.current; drag.current = null;
+    if (!d) return;
+    setRows(rs => {
+      const n = clone(rs);
+      let cell, tc = targetC;
+      if (d.from === 'palette') {
+        cell = { stat: d.stat, label: null };
+      } else {
+        cell = { ...n[d.r][d.c] };
+        n[d.r].splice(d.c, 1);
+        if (d.r === targetR && tc != null && d.c < tc) tc -= 1;  // index shifted by removal
+      }
+      const at = tc == null ? n[targetR].length : tc;
+      n[targetR].splice(at, 0, cell);
+      return n;
+    });
+  };
+  const onTrash = () => {
+    const d = drag.current; drag.current = null;
+    if (d?.from === 'cell') setRows(rs => rs.map((row, ri) => ri !== d.r ? row : row.filter((_, ci) => ci !== d.c)));
+  };
+  const setLabel = (r, c, v) => setRows(rs => rs.map((row, ri) => ri !== r ? row : row.map((cell, ci) => ci !== c ? cell : { ...cell, label: v.trim() || null })));
+  const addRow = () => setRows(rs => [...rs, []]);
+  const delRow = (r) => setRows(rs => rs.length > 1 ? rs.filter((_, ri) => ri !== r) : [[]]);
+
+  const save = () => {
+    const clean = rows.map(r => r.filter(Boolean)).filter(r => r.length);
+    if (!clean.length) return;
+    onSave(name.trim() || 'My HUD', clean);
+  };
+  const cellCount = rows.reduce((a, r) => a + r.length, 0);
+
+  return (
+    <div className="panel hud-builder">
+      <div className="toprow" style={{ marginTop: 0 }}>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Layout name"
+          style={{ maxWidth: 280, fontSize: 15 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn gold" disabled={saving || !cellCount} onClick={save}>{saving ? 'Saving…' : (initial.id ? 'Save changes' : 'Create & arm')}</button>
+        </div>
+      </div>
+
+      <div className="hint" style={{ margin: '4px 0 10px' }}>Drag stats from the palette into the rows below. Drag a placed chip to move or reorder it; drop it on the 🗑 to remove; click a chip to give it a short label.</div>
+
+      <div className="hb-palette">
+        {palette.map(p => (
+          <span key={p.key} className="hb-chip pal" draggable title={STAT_INFO[p.key]?.short || p.key}
+            onDragStart={(e) => { drag.current = { from: 'palette', stat: p.stat }; e.dataTransfer.setData('text/plain', p.stat); e.dataTransfer.effectAllowed = 'copy'; }}>
+            + {statTag(p.key)}
+          </span>
+        ))}
+      </div>
+
+      <div className="hb-canvas">
+        {rows.map((row, r) => (
+          <div key={r} className="hb-row"
+            onDragOver={e => e.preventDefault()}
+            onDrop={() => dropInto(r, null)}>
+            <span className="hb-rownum">{r + 1}</span>
+            <div className="hb-cells">
+              {row.length === 0 && <span className="hb-empty">drop stats here</span>}
+              {row.map((cell, c) => (
+                <span key={c} className="hb-chip" draggable
+                  onDragStart={(e) => { e.stopPropagation(); drag.current = { from: 'cell', r, c }; e.dataTransfer.setData('text/plain', cell.stat); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => { e.stopPropagation(); dropInto(r, c); }}
+                  onClick={() => setEdit(edit && edit.r === r && edit.c === c ? null : { r, c })}>
+                  {cell.label && <i className="hb-lab">{cell.label}</i>}{statTag(keyOf(cell.stat))}
+                  <button className="hb-x" title="Remove" onClick={(e) => { e.stopPropagation(); setRows(rs => rs.map((rw, ri) => ri !== r ? rw : rw.filter((_, ci) => ci !== c))); }}>×</button>
+                  {edit && edit.r === r && edit.c === c && (
+                    <input className="hb-label-in" autoFocus defaultValue={cell.label || ''} placeholder="label"
+                      onClick={e => e.stopPropagation()} maxLength={6}
+                      onBlur={e => { setLabel(r, c, e.target.value); setEdit(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { setLabel(r, c, e.target.value); setEdit(null); } }} />
+                  )}
+                </span>
+              ))}
+            </div>
+            <button className="hb-delrow" title="Remove row" onClick={() => delRow(r)}>✕</button>
+          </div>
+        ))}
+        <div className="hb-tools">
+          <button className="badge" onClick={addRow}>+ Add row</button>
+          <span className="hb-trash" title="Drag a chip here to remove it"
+            onDragOver={e => e.preventDefault()} onDrop={onTrash}>🗑 drop to remove</span>
+        </div>
+      </div>
+
+      <div className="hint" style={{ marginTop: 10 }}>Preview · the panel that floats on each seat:</div>
+      <div className="hud-preview" style={{ marginTop: 6 }}>
+        {rows.filter(r => r.length).length === 0 && <div className="hint">empty</div>}
+        {rows.filter(r => r.length).map((row, i) => (
+          <div key={i} className="hud-preview-row">
+            {row.map((cell, j) => (
+              <span key={j} className="hud-preview-cell">{cell.label ? <i>{cell.label}</i> : null}{statTag(keyOf(cell.stat))}</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Full-page HUD profile manager: upload a PokerTracker 4 layout (.pt4hud),
-// pick which one the felt overlays, preview its rows, and delete your own.
+// build/edit one by hand, pick which the felt overlays, and delete your own.
 function HudPage() {
   const { me } = useMe();
   const [data, setData] = useState(null);     // { profiles, selected, stat_keys }
@@ -1087,6 +1220,25 @@ function HudPage() {
     catch (e) { setMsg(e.message); }
   };
 
+  // The builder
+  const [editing, setEditing] = useState(null);   // {id?, name, rows} | null
+  const [saving, setSaving] = useState(false);
+  const cloneRows = (rows) => (rows || []).map(r => r.map(c => ({ ...c })));
+  const newBlank = () => { setMsg(''); setEditing({ name: 'My HUD', rows: [[]] }); };
+  const editProfile = (p) => { setMsg(''); setEditing({ id: p.id, name: p.name, rows: cloneRows(p.rows) }); };
+  const dupProfile = (p) => { setMsg(''); setEditing({ name: `${p.name} copy`, rows: cloneRows(p.rows) }); };
+  const saveBuilt = async (name, rows) => {
+    setSaving(true); setMsg('');
+    try {
+      const r = editing.id
+        ? await api.put(`/api/hud/profiles/${editing.id}`, { name, rows })
+        : await api.post('/api/hud/profiles', { name, rows });
+      setMsg(editing.id ? `Saved “${r.profile.name}”.` : `Created “${r.profile.name}” and armed it.`);
+      setEditing(null); load();
+    } catch (e) { setMsg(e.message); }
+    setSaving(false);
+  };
+
   if (!me) {
     return (
       <div className="wrap">
@@ -1114,11 +1266,21 @@ function HudPage() {
           Pick a house default, or bring your own. New numbers are explained in <A href="/stats-guide">the Tell Codex</A>.
         </div>
 
-        <label className={`btn gold big${busy ? '' : ''}`} style={{ display: 'inline-block', cursor: busy ? 'wait' : 'pointer', opacity: busy ? .6 : 1 }}>
-          {busy ? 'Importing…' : '↥ Upload a .pt4hud layout'}
-          <input type="file" accept=".pt4hud" disabled={busy} style={{ display: 'none' }} onChange={up} />
-        </label>
-        {msg && <span className="mono" style={{ marginLeft: 12, color: 'var(--pk-gold)', fontSize: 13 }}>{msg}</span>}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn big" onClick={newBlank}>✎ Build a layout</button>
+          <label className="btn gold big" style={{ display: 'inline-block', cursor: busy ? 'wait' : 'pointer', opacity: busy ? .6 : 1 }}>
+            {busy ? 'Importing…' : '↥ Upload a .pt4hud'}
+            <input type="file" accept=".pt4hud" disabled={busy} style={{ display: 'none' }} onChange={up} />
+          </label>
+          {msg && <span className="mono" style={{ color: 'var(--pk-gold)', fontSize: 13 }}>{msg}</span>}
+        </div>
+
+        {editing && (
+          <div style={{ margin: '14px 0' }}>
+            <HudBuilder initial={editing} statKeys={data?.stat_keys || {}} saving={saving}
+              onSave={saveBuilt} onCancel={() => setEditing(null)} />
+          </div>
+        )}
 
         <h3 style={{ margin: '22px 0 8px', fontSize: 14, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--pk-scs)' }}>Your layouts</h3>
         <div className="hud-list">
@@ -1130,12 +1292,14 @@ function HudPage() {
               <span>{selected === p.id ? '◉' : '○'} {p.name} {p.user_id === null
                 ? <span className="badge" style={{ marginLeft: 6 }}>house</span>
                 : <span className="badge gold" style={{ marginLeft: 6 }}>yours</span>}</span>
-              {p.user_id !== null && (
-                <button className="badge" title="Delete this layout" onClick={(e) => { e.stopPropagation(); burn(p.id); }}>✕ burn</button>
-              )}
+              <span style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                {p.user_id !== null && <button className="badge" title="Edit this layout" onClick={() => editProfile(p)}>✎ edit</button>}
+                <button className="badge" title="Duplicate into a new editable layout" onClick={() => dupProfile(p)}>⧉ copy</button>
+                {p.user_id !== null && <button className="badge" title="Delete this layout" onClick={() => burn(p.id)}>✕ burn</button>}
+              </span>
             </div>
           ))}
-          {profiles.length === 0 && <div className="hint">No layouts yet — upload one above.</div>}
+          {profiles.length === 0 && <div className="hint">No layouts yet — build one, or upload a .pt4hud above.</div>}
         </div>
 
         {active && active.rows && (
