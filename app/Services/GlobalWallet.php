@@ -52,8 +52,79 @@ class GlobalWallet
             'rakeback_paid' => $usd($s['rakeback_paid_cents']),
             'accounts' => $s['accounts'],
             'as_of' => $s['as_of'],
+            'breakdown' => $this->breakdown(),
             'raw' => $s,
         ];
+    }
+
+    /**
+     * A fully itemised view of the books: exactly where every figure comes from
+     * and how it is tallied. Cash on hand split by source, chips currently in
+     * play, and every ledger movement grouped by type with a plain-English note
+     * on what it is. All amounts are integer USD cents.
+     */
+    public function breakdown(): array
+    {
+        return Cache::remember('global_wallet_breakdown', 60, function () {
+            $humans = (int) User::where('is_bot', 0)->sum('chips');
+            $bots = (int) User::where('is_bot', 1)->sum('chips');
+            $humanCount = (int) User::where('is_bot', 0)->count();
+            $botCount = (int) User::where('is_bot', 1)->count();
+            $inPlay = (int) \App\Models\Seat::where('status', '!=', 'empty')->sum('stack');
+
+            // Human-readable label + description for each ledger movement type.
+            $labels = [
+                'grant'         => ['Owner grants', 'Chips minted to an account directly by the house'],
+                'bonus'         => ['Promo bonuses', 'Bonus codes redeemed into player bankrolls'],
+                'deposit'       => ['Crypto deposits', 'BTC / ETH funded onto the felt'],
+                'withdraw'      => ['Withdrawals', 'Bankroll cashed out to a chain address'],
+                'buy_in'        => ['Table buy-ins', 'Chips moved from bankroll onto a seat'],
+                'cash_out'      => ['Table cash-outs', 'Chips moved from a seat back to bankroll'],
+                'rake'          => ['House rake', "The house's cut of each flopped pot"],
+                'rakeback'      => ['Rakeback returned', 'Rake paid back to the players who generated it'],
+                'affiliate'     => ['Affiliate payouts', 'Commissions credited to recruiters'],
+                'casino_bet'    => ['Casino wagers', 'Stakes placed at the casino games (roulette, etc.)'],
+                'casino_win'    => ['Casino payouts', 'Winnings paid from the casino games'],
+                'side_bet'      => ['Side bets placed', 'Rail wagers staked on live hands'],
+                'side_bet_win'  => ['Side-bet payouts', 'Winning rail wagers'],
+                'side_bet_void' => ['Side bets refunded', 'Voided rail wagers returned'],
+            ];
+
+            $rows = LedgerEntry::selectRaw(
+                'type, COUNT(*) n, SUM(delta) net, SUM(GREATEST(delta,0)) inflow, SUM(LEAST(delta,0)) outflow'
+            )->groupBy('type')->orderByRaw('SUM(ABS(delta)) DESC')->get();
+
+            $flows = [];
+            foreach ($rows as $r) {
+                [$label, $desc] = $labels[$r->type] ?? [ucwords(str_replace('_', ' ', $r->type)), 'Ledger movement'];
+                $flows[] = [
+                    'type'          => $r->type,
+                    'label'         => $label,
+                    'desc'          => $desc,
+                    'count'         => (int) $r->n,
+                    'net_cents'     => (int) $r->net,
+                    'inflow_cents'  => (int) $r->inflow,
+                    'outflow_cents' => (int) abs($r->outflow),
+                ];
+            }
+
+            return [
+                'cash_on_hand' => [
+                    'total_cents' => $humans + $bots,
+                    'formula' => 'SUM(users.chips) — idle chip balances held across every account',
+                    'parts' => [
+                        ['label' => 'Human player bankrolls', 'cents' => $humans, 'note' => $humanCount . ' human accounts'],
+                        ['label' => 'Machine bankrolls', 'cents' => $bots, 'note' => $botCount . ' bot accounts'],
+                    ],
+                ],
+                'in_play' => [
+                    'total_cents' => $inPlay,
+                    'formula' => 'SUM(seats.stack) for every seated player — chips committed at the tables right now',
+                ],
+                'flows' => $flows,
+                'as_of' => now()->toIso8601String(),
+            ];
+        });
     }
 
     /**
