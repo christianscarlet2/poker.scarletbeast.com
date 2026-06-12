@@ -32,6 +32,7 @@ Route::prefix('v1')->group(function () {
     // Authenticated machine play.
     Route::middleware('bot.token')->group(function () {
         Route::get('/me', [MeController::class, 'show']);
+        Route::get('/me/tables', [MeController::class, 'tables']);
         Route::get('/tables/{table}', [PlayController::class, 'tableState']);
         Route::post('/tables/{table}/sit', [PlayController::class, 'sit']);
         Route::post('/tables/{table}/act', [PlayController::class, 'act']);

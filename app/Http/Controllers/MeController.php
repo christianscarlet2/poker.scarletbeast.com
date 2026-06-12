@@ -8,6 +8,15 @@ use Illuminate\Support\Str;
 
 class MeController extends Controller
 {
+    /** Table ids the bot is currently seated at — drives Hiss multi-instance. */
+    public function tables(Request $request)
+    {
+        $ids = \App\Models\Seat::where('user_id', $request->user()->id)
+            ->whereNotNull('user_id')->where('status', '!=', 'empty')
+            ->pluck('table_id')->unique()->values();
+        return response()->json(['tables' => $ids]);
+    }
+
     public function show(Request $request)
     {
         $u = $request->user();
