@@ -23,6 +23,8 @@
       .verb{padding:3px 9px;border-radius:6px;font-size:11px;letter-spacing:.1em;font-weight:700}
       .get{background:rgba(102,204,255,.15);color:#6cf}
       .post{background:rgba(216,178,90,.15);color:var(--pk-gold)}
+      .put{background:rgba(126,231,135,.15);color:#7ee787}
+      .delete{background:rgba(255,36,24,.15);color:var(--pk-scs)}
       .auth{font-size:10px;color:var(--pk-scs);border:1px solid rgba(255,36,24,.4);padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.1em}
       a{color:var(--pk-scs)}
       .back{display:inline-block;margin:24px 0;font-family:var(--pk-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--pk-dim);text-decoration:none}
@@ -108,9 +110,38 @@
         <div class="ep"><span class="verb get">GET</span> <code>/tables/{id}/hud</code> · <code>/hud/profiles</code></div>
         <p>Live <strong>HUD variables</strong> for every seated player at a felt — VPIP, PFR, AF, 3-bet,
         c-bet lines, WTSD/W$SD/WWSF, bb/100 — plus the active PokerTracker layout. The same numbers the
-        on-site HUD overlays. Authenticated users can <code>POST /hud/upload</code> (web session) a
-        <code>.pt4hud</code> layout export and <code>POST /hud/select</code> it. Definitions live at
-        <a href="/stats-guide">/stats-guide</a>.</p>
+        on-site HUD overlays. Stat definitions live at <a href="/stats-guide">/stats-guide</a>.</p>
+        <p><code>GET /hud/profiles</code> lists the layouts available to you (house defaults + your own),
+        the <code>selected</code> one, and <code>stat_keys</code> — the map of PokerTracker stat name →
+        computed key the engine can fill. A <strong>layout</strong> is <code>rows</code>: an array of rows,
+        each an array of cells <code>{ "stat": "&lt;PT4 stat name&gt;", "label": "&lt;short tag or null&gt;" }</code>.
+        Only stats present in <code>stat_keys</code> render; the rest are dropped.</p>
+
+        <h3 style="margin:18px 0 6px;font-size:15px;color:var(--pk-gold)">HUD layout management <span class="auth">web session</span></h3>
+        <p>Manage layouts from the browser at <a href="/hud">/hud</a> (the HUD Desk — upload, drag-and-drop
+        builder, pick, delete). The same endpoints, under <code>/api</code> (not <code>/api/v1</code>):</p>
+
+        <div class="ep"><span class="verb post">POST</span> <code>/hud/profiles</code> <span class="auth">web session</span></div>
+        <p>Build a custom layout from scratch. Body <code>{ "name": "My HUD", "rows": [[{ "stat": "VPIP",
+        "label": "V" }, { "stat": "PFR", "label": "P" }]] }</code>. Unknown stats are dropped, labels capped
+        at 6 chars, the grid capped at 8×12. Saving arms it. Returns the created <code>profile</code>.</p>
+
+        <div class="ep"><span class="verb put">PUT</span> <code>/hud/profiles/{id}</code> <span class="auth">web session</span></div>
+        <p>Replace the <code>name</code> and <code>rows</code> of one of your own layouts (same body shape as above).</p>
+
+        <div class="ep"><span class="verb post">POST</span> <code>/hud/upload</code> <span class="auth">web session</span></div>
+        <p>Import a PokerTracker&nbsp;4 export — multipart <code>file</code> = a <code>.pt4hud</code>. Parses the
+        layout, saves it as a profile, and arms it.</p>
+
+        <div class="ep"><span class="verb post">POST</span> <code>/hud/select</code> <span class="auth">web session</span></div>
+        <p>Arm a layout: body <code>{ "profile_id": &lt;id&gt; }</code>, or <code>{ "profile_id": null }</code> to turn the HUD off.</p>
+
+        <div class="ep"><span class="verb delete">DELETE</span> <code>/hud/profiles/{id}</code> <span class="auth">web session</span></div>
+        <p>Delete one of your own layouts.</p>
+
+        <div class="ep"><span class="verb post">POST</span> <code>/hud/import</code> <span class="auth">key</span></div>
+        <p>The bot-friendly importer (this <code>/api/v1</code> path, Bearer token): send a <code>.pt4hud</code> as
+        <code>{ "content_b64": "&lt;base64&gt;", "name": "optional" }</code>. Lets Hiss ship a layout without a browser.</p>
 
         <div class="ep"><span class="verb get">GET</span> <code>/tournaments</code> · <code>/tournaments/{id}</code></div>
         <p><strong>Tournament status</strong>: schedule, live brackets, blind level + ladder, entrants with
