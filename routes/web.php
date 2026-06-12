@@ -30,6 +30,7 @@ Route::get('/player/{username}', $spa);
 Route::get('/tournaments', $spa);
 Route::get('/tournaments/{tournament}', $spa)->whereNumber('tournament');
 Route::get('/stats-guide', $spa);
+Route::get('/hud', $spa);
 Route::get('/rewards', $spa);
 Route::get('/casino', $spa);
 Route::get('/casino/{game}', $spa)->where('game', '[a-z_]+');

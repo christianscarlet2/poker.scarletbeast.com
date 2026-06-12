@@ -597,3 +597,17 @@ body.skin-mobile #poker-root{padding-bottom:74px}
 .myt-stack{font-family:var(--pk-mono);font-size:14px;font-weight:700;color:var(--pk-gold)}
 .myt-cta{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs)}
 .myt:hover .myt-cta{color:var(--pk-bone)}
+
+/* ─────────────────────────────────────────────────── HUD desk (/hud) ─── */
+.hud-list{display:flex;flex-direction:column;gap:6px}
+.hud-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 13px;
+  border:1px solid rgba(255,255,255,.1);border-radius:9px;background:#0b0808;cursor:pointer;
+  font-family:var(--pk-mono);font-size:13px;color:var(--pk-bone);transition:.14s}
+.hud-row:hover{border-color:rgba(216,178,90,.5)}
+.hud-row.on{border-color:rgba(216,178,90,.7);background:rgba(216,178,90,.08);box-shadow:0 0 12px rgba(216,178,90,.18)}
+.hud-preview{display:flex;flex-direction:column;gap:5px;padding:14px;border:1px dashed rgba(255,255,255,.16);
+  border-radius:10px;background:radial-gradient(120% 120% at 50% 0,rgba(17,39,29,.5),#0a0707)}
+.hud-preview-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.hud-preview-cell{font-family:var(--pk-mono);font-size:12px;color:var(--pk-bone);
+  background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 8px}
+.hud-preview-cell i{font-style:normal;color:var(--pk-scs);margin-right:4px}

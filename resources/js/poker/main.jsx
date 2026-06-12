@@ -86,6 +86,7 @@ function AppBar() {
         <a href="/api-docs" className="badge">API</a>
         <a href="/developers" className="badge">DEV</a>
         <a href="/download" className="badge">GET APP</a>
+        {me && <A href="/hud" className="badge">HUD</A>}
         {me && <A href="/wallet" className="badge ho">VAULT</A>}
         {me && <A href="/rewards" className="badge gold">TRIBUTE</A>}
         {me && me.is_admin && <A href="/admin" className="badge mo">ALTAR</A>}
@@ -1054,6 +1055,120 @@ function StatsGuidePage() {
   );
 }
 
+/* -------------------------------------------------------------- HUD desk */
+// Full-page HUD profile manager: upload a PokerTracker 4 layout (.pt4hud),
+// pick which one the felt overlays, preview its rows, and delete your own.
+function HudPage() {
+  const { me } = useMe();
+  const [data, setData] = useState(null);     // { profiles, selected, stat_keys }
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.get('/api/hud/profiles').then(setData).catch(() => {});
+  useEffect(() => { if (me) load(); }, [me]);
+
+  const pick = async (id) => {
+    setMsg('');
+    try { await api.post('/api/hud/select', { profile_id: id }); setData(d => ({ ...d, selected: id })); setMsg(id ? 'HUD armed.' : 'HUD off.'); }
+    catch (e) { setMsg(e.message); }
+  };
+  const up = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true); setMsg('Importing…');
+    const fd = new FormData(); fd.append('file', f);
+    try { const r = await api.post('/api/hud/upload', fd); setMsg(`Imported “${r.profile.name}” and armed it.`); load(); }
+    catch (err) { setMsg(err.message); }
+    setBusy(false); e.target.value = '';
+  };
+  const burn = async (id) => {
+    setMsg('');
+    try { await api.del(`/api/hud/profiles/${id}`); load(); }
+    catch (e) { setMsg(e.message); }
+  };
+
+  if (!me) {
+    return (
+      <div className="wrap">
+        <div className="toprow"><h2 style={{ margin: 0 }}>The HUD Desk</h2></div>
+        <div className="panel"><div className="center-msg">Sign in to upload and arm your HUD. <A href="/login">Enter →</A></div></div>
+      </div>
+    );
+  }
+
+  const profiles = data?.profiles || [];
+  const selected = data?.selected ?? null;
+  const active = profiles.find(p => p.id === selected);
+
+  return (
+    <div className="wrap">
+      <div className="toprow">
+        <h2 style={{ margin: 0 }}>The HUD Desk</h2>
+        <span className="mono" style={{ color: 'var(--pk-dim)' }}>upload a PokerTracker 4 layout · arm it on the felt</span>
+      </div>
+
+      <div className="panel">
+        <div className="hint" style={{ marginBottom: 12 }}>
+          Upload a PokerTracker&nbsp;4 <b>HUD layout export</b> (a <span className="mono">.pt4hud</span> file) and the felt overlays its
+          rows — VPIP, PFR, aggression, 3-bet, c-bet, WTSD and the rest — on every seat, computed live from the house's own hand archive.
+          Pick a house default, or bring your own. New numbers are explained in <A href="/stats-guide">the Tell Codex</A>.
+        </div>
+
+        <label className={`btn gold big${busy ? '' : ''}`} style={{ display: 'inline-block', cursor: busy ? 'wait' : 'pointer', opacity: busy ? .6 : 1 }}>
+          {busy ? 'Importing…' : '↥ Upload a .pt4hud layout'}
+          <input type="file" accept=".pt4hud" disabled={busy} style={{ display: 'none' }} onChange={up} />
+        </label>
+        {msg && <span className="mono" style={{ marginLeft: 12, color: 'var(--pk-gold)', fontSize: 13 }}>{msg}</span>}
+
+        <h3 style={{ margin: '22px 0 8px', fontSize: 14, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--pk-scs)' }}>Your layouts</h3>
+        <div className="hud-list">
+          <div className={`hud-row${selected === null ? ' on' : ''}`} onClick={() => pick(null)}>
+            <span>{selected === null ? '◉' : '○'} HUD off</span>
+          </div>
+          {profiles.map(p => (
+            <div key={p.id} className={`hud-row${selected === p.id ? ' on' : ''}`} onClick={() => pick(p.id)}>
+              <span>{selected === p.id ? '◉' : '○'} {p.name} {p.user_id === null
+                ? <span className="badge" style={{ marginLeft: 6 }}>house</span>
+                : <span className="badge gold" style={{ marginLeft: 6 }}>yours</span>}</span>
+              {p.user_id !== null && (
+                <button className="badge" title="Delete this layout" onClick={(e) => { e.stopPropagation(); burn(p.id); }}>✕ burn</button>
+              )}
+            </div>
+          ))}
+          {profiles.length === 0 && <div className="hint">No layouts yet — upload one above.</div>}
+        </div>
+
+        {active && active.rows && (
+          <>
+            <h3 style={{ margin: '22px 0 8px', fontSize: 14, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--pk-scs)' }}>Preview · {active.name}</h3>
+            <div className="hud-preview">
+              {active.rows.map((row, i) => (
+                <div key={i} className="hud-preview-row">
+                  {row.map((cell, j) => (
+                    <span key={j} className="hud-preview-cell">{cell.label ? <i>{cell.label}</i> : null}{(data.stat_keys?.[cell.stat] || cell.stat)}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>This is the panel that floats on each seat. Stats the engine can't compute are dropped automatically.</div>
+          </>
+        )}
+      </div>
+
+      <div className="panel">
+        <h3 style={{ margin: '0 0 10px', fontSize: 14, textTransform: 'uppercase', letterSpacing: '.05em' }}>How to export a layout from PokerTracker 4</h3>
+        <ol style={{ color: '#cfc7bd', lineHeight: 1.7, fontSize: 14, paddingLeft: 20, margin: 0 }}>
+          <li>In PokerTracker&nbsp;4, open <b>Tools → HUD → Edit/Configure HUD</b>.</li>
+          <li>Choose the layout you want, then <b>HUD Layout → Export Active Layout</b>.</li>
+          <li>Save the <span className="mono">.pt4hud</span> file, then drop it into <b>Upload a .pt4hud layout</b> above.</li>
+          <li>It arms automatically — sit at any felt and toggle <b>HUD ON</b> to see it on every seat.</li>
+        </ol>
+        <div className="hint" style={{ marginTop: 10 }}>You can also manage layouts from any table: the <b>⚙</b> beside the <b>HUD ON/OFF</b> toggle opens the same picker.</div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------ tournaments */
 const T_STATUS = { running: 'LIVE', registering: 'OPEN', scheduled: 'SOON', finished: 'DONE', cancelled: 'DEAD' };
 
@@ -1629,6 +1744,7 @@ function Router() {
   if (path === '/players') return <PlayersPage />;
   if (path === '/rewards') return <RewardsPage />;
   if (path === '/stats-guide') return <StatsGuidePage />;
+  if (path === '/hud') return <HudPage />;
   if (path === '/casino') return <CasinoRoute />;
   if ((m = path.match(/^\/casino\/([a-z_]+)/))) return <CasinoRoute game={m[1]} />;
   if (path === '/tournaments') return <TournamentsPage />;
