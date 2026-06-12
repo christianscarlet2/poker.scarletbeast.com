@@ -83,7 +83,7 @@ function Hero({ sess }) {
       <div className="ni-wrap">
         <div className="ni-kick"><span className="dot" /> THE CREATORS NETWORK</div>
         <h1>networked<b>in</b></h1>
-        <p className="ni-sub">A LinkedIn for the people building poker minds. An open feed, real resumes, blog posts, and the work itself — videos, decks, papers, repos. Not who you know. What you built.</p>
+        <p className="ni-sub">The professional network for the people building poker minds. An open feed, real resumes, blog posts, and the work itself — videos, decks, papers, repos. Not who you know. What you built.</p>
         {!sess.user && (
           <div className="ni-cta">
             <a className="ni-btn big" href="/login">Sign in</a>
