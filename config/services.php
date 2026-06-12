@@ -53,6 +53,8 @@ return [
         'url' => env('AKAUNTING_URL'),
         'token' => env('AKAUNTING_TOKEN'),
         'company' => env('AKAUNTING_COMPANY', 1),
+        'email' => env('AKAUNTING_EMAIL'),
+        'password' => env('AKAUNTING_PASSWORD'),
     ],
 
 ];

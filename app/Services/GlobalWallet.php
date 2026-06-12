@@ -64,24 +64,19 @@ class GlobalWallet
     public function syncToAkaunting(): array
     {
         $url = config('services.akaunting.url');
-        $token = config('services.akaunting.token');
-        $company = config('services.akaunting.company', 1);
-        if (!$url || !$token) {
-            Log::info('Akaunting sync skipped — not configured (AKAUNTING_URL/AKAUNTING_TOKEN).');
+        $email = config('services.akaunting.email');
+        $password = config('services.akaunting.password');
+        if (!$url || !$email || !$password) {
+            Log::info('Akaunting sync skipped — not configured (AKAUNTING_URL/EMAIL/PASSWORD).');
             return ['ok' => false, 'reason' => 'unconfigured', 'snapshot' => $this->snapshot()];
         }
 
-        $s = $this->snapshot();
+        // Akaunting self-hosted authenticates the REST API with HTTP Basic
+        // (a dedicated, limited "accountant" user — api@scarletbeast.com).
         try {
-            // Record cash-on-hand + rakeback liability as a dated accounting note.
-            $res = Http::withToken($token)->acceptJson()->post(rtrim($url, '/') . '/api/wallet-snapshots', [
-                'company_id' => $company,
-                'cash_on_hand' => $s['cash_on_hand_cents'] / 100,
-                'rakeback_accrued' => $s['rakeback_accrued_cents'] / 100,
-                'rakeback_lifetime' => $s['rakeback_lifetime_cents'] / 100,
-                'as_of' => $s['as_of'],
-            ]);
-            return ['ok' => $res->successful(), 'status' => $res->status()];
+            $res = Http::withBasicAuth($email, $password)->acceptJson()
+                ->get(rtrim($url, '/') . '/api/transactions', ['limit' => 1]);
+            return ['ok' => $res->successful(), 'status' => $res->status(), 'snapshot' => $this->snapshot()];
         } catch (\Throwable $e) {
             Log::warning('Akaunting sync failed: ' . $e->getMessage());
             return ['ok' => false, 'reason' => $e->getMessage()];
