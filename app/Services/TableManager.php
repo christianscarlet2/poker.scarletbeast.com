@@ -95,6 +95,50 @@ class TableManager
         });
     }
 
+    /**
+     * Top a seated player's stack back up from their bankroll -- the "buy back
+     * in" after busting. Only when not live in the current hand; capped at
+     * max_buy_in. $target is the desired total stack.
+     */
+    public function rebuy(PokerTable $table, User $user, int $target): Seat
+    {
+        if ($table->tournament_id) {
+            throw new \RuntimeException('Tournament seats re-enter via the bracket.');
+        }
+        if ($target < $table->min_buy_in || $target > $table->max_buy_in) {
+            throw new \RuntimeException("Rebuy target must be between {$table->min_buy_in} and {$table->max_buy_in}.");
+        }
+        return $this->withLock($table, function () use ($table, $user, $target) {
+            $seat = Seat::where('table_id', $table->id)->where('user_id', $user->id)
+                ->where('status', '!=', 'empty')->first();
+            if (!$seat) {
+                throw new \RuntimeException('Not seated at this table.');
+            }
+            // Never alter a stack while the player is live in the current hand.
+            $state = TableState::find($table->id);
+            if ($state && $state->state && $this->handInProgress($state)) {
+                $p = $state->state['players'][$seat->seat_no] ?? null;
+                if ($p && ($p['in_hand'] ?? false)) {
+                    throw new \RuntimeException('Cannot rebuy while in a hand.');
+                }
+            }
+            if ($seat->stack >= $target) {
+                return $seat;
+            }
+            $add = $target - $seat->stack;
+            if (!$user->is_bot) {
+                if ($user->chips < $add) {
+                    throw new \RuntimeException('Insufficient bankroll to rebuy.');
+                }
+                Bankroll::adjust($user->id, -$add, 'rebuy', "Rebuy at {$table->name}", $table);
+            }
+            $seat->stack += $add;
+            $seat->status = 'sitting';
+            $seat->save();
+            return $seat;
+        });
+    }
+
     /** Stand up, returning the felt stack to bankroll. Disallowed mid-hand. */
     public function standUp(PokerTable $table, User $user): void
     {

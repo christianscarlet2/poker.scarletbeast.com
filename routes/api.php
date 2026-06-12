@@ -35,6 +35,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/me/tables', [MeController::class, 'tables']);
         Route::get('/tables/{table}', [PlayController::class, 'tableState']);
         Route::post('/tables/{table}/sit', [PlayController::class, 'sit']);
+        Route::post('/tables/{table}/rebuy', [PlayController::class, 'rebuy']);
         Route::post('/tables/{table}/act', [PlayController::class, 'act']);
         Route::post('/tables/{table}/leave', [PlayController::class, 'leave']);
 

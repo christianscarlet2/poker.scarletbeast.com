@@ -156,6 +156,7 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/me/token', [MeController::class, 'regenToken']);
 
     Route::post('/tables/{table}/sit', [PlayController::class, 'sit']);
+    Route::post('/tables/{table}/rebuy', [PlayController::class, 'rebuy']);
     Route::post('/tables/{table}/leave', [PlayController::class, 'leave']);
     Route::post('/tables/{table}/act', [PlayController::class, 'act']);
 

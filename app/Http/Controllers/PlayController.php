@@ -100,6 +100,20 @@ class PlayController extends Controller
         return response()->json(['ok' => true, 'seat' => $seat->seat_no, 'state' => $this->tm->viewFor($table, $request->user())]);
     }
 
+    public function rebuy(Request $request, PokerTable $table)
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'integer', 'min:1'],
+        ]);
+        try {
+            $seat = $this->tm->rebuy($table, $request->user(), $data['amount']);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+        \App\Jobs\TableTickJob::dispatch($table->id)->onQueue('poker_default');
+        return response()->json(['ok' => true, 'seat' => $seat->seat_no, 'state' => $this->tm->viewFor($table, $request->user())]);
+    }
+
     public function leave(Request $request, PokerTable $table)
     {
         try {
