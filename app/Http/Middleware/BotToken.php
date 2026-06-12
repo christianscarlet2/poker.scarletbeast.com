@@ -27,6 +27,8 @@ class BotToken
         }
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
+        // Flag this request as machine-driven so the felt counts the seat as a bot.
+        $request->attributes->set('via_bot', true);
         $user->forceFill(['last_seen_at' => now(), 'bot_seen_at' => now()])->saveQuietly();
         return $next($request);
     }

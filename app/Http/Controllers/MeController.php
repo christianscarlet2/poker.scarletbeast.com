@@ -26,6 +26,7 @@ class MeController extends Controller
             'chips' => $u->chips,
             'is_admin' => $u->is_admin,
             'is_bot' => $u->is_bot,
+            'playing_as' => $u->playingAs(),     // 'bot' | 'human' — live control mode
             'avatar' => $u->avatar,
             'has_api_token' => (bool) $u->api_token_hash,
             'ledger' => LedgerEntry::where('user_id', $u->id)->latest('id')->limit(20)->get(),

@@ -18,6 +18,22 @@ class PlayController extends Controller
     {
     }
 
+    /**
+     * Is this request driving the felt by machine (Bearer token via the bot gate)
+     * or by hand (web session)? The BotToken middleware flags the former. We also
+     * stamp the matching "seen" clock so an account's live control mode — flesh vs
+     * silicon — can be read off the two timestamps even when it flips mid-session.
+     */
+    private function viaBot(Request $request): bool
+    {
+        $viaBot = (bool) $request->attributes->get('via_bot', false);
+        if (! $viaBot && ($user = $request->user())) {
+            // The machine gate already stamps bot_seen_at; stamp the flesh clock here.
+            $user->forceFill(['last_seen_at' => now(), 'human_seen_at' => now()])->saveQuietly();
+        }
+        return $viaBot;
+    }
+
     /** Lobby: tables grouped by arena type and stake, plus a live hero felt. */
     public function lobby(Request $request)
     {
@@ -81,6 +97,7 @@ class PlayController extends Controller
 
     public function tableState(Request $request, PokerTable $table)
     {
+        $this->viaBot($request); // stamp the presence clock (flesh vs machine)
         return response()->json($this->tm->viewFor($table, $request->user()));
     }
 
@@ -91,7 +108,7 @@ class PlayController extends Controller
             'seat' => ['nullable', 'integer'],
         ]);
         try {
-            $seat = $this->tm->buyIn($table, $request->user(), $data['amount'], $data['seat'] ?? null);
+            $seat = $this->tm->buyIn($table, $request->user(), $data['amount'], $data['seat'] ?? null, $this->viaBot($request));
         } catch (\Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
@@ -131,7 +148,7 @@ class PlayController extends Controller
             'amount' => ['nullable', 'integer', 'min:0'],
         ]);
         try {
-            $view = $this->tm->act($table, $request->user(), $data['action'], $data['amount'] ?? 0);
+            $view = $this->tm->act($table, $request->user(), $data['action'], $data['amount'] ?? 0, $this->viaBot($request));
         } catch (\Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
@@ -212,7 +229,49 @@ class PlayController extends Controller
         if (!$user) {
             return response()->json(['error' => 'No such soul in the ledger.'], 404);
         }
-        return response()->json(['stats' => $stats->forUser($user)]);
+        return response()->json([
+            'stats' => $stats->forUser($user),
+            'control' => $this->controlReport($user),
+        ]);
+    }
+
+    /**
+     * Flesh or machine? A live read of how a player is driving their account right
+     * now — which flips the moment a human hands the wheel to Hiss (the API token)
+     * or takes it back in the browser. Public so any client or bot can poll it.
+     *
+     *   GET /api/players/{username}/control     (web)
+     *   GET /api/v1/players/{username}/control  (bot gate)
+     */
+    public function control(Request $request, string $username)
+    {
+        $user = \App\Models\User::where('username', $username)->first();
+        if (!$user) {
+            return response()->json(['error' => 'No such soul in the ledger.'], 404);
+        }
+        return response()->json($this->controlReport($user));
+    }
+
+    /** Shared shape for the control read — account truth + live, per-seat control. */
+    private function controlReport(\App\Models\User $user): array
+    {
+        $seats = Seat::where('user_id', $user->id)->where('status', '!=', 'empty')
+            ->get(['table_id', 'seat_no', 'is_bot']);
+        return [
+            'username' => $user->username,
+            'account_is_bot' => (bool) $user->is_bot,   // a registered house bot
+            'playing_as' => $user->playingAs(),          // 'bot' | 'human' — live
+            'bot_active' => $user->botActive(),          // a machine is polling/acting now
+            'online' => (bool) ($user->last_seen_at && $user->last_seen_at->gt(now()->subSeconds(\App\Models\User::SEEN_WINDOW))),
+            'bot_seen_at' => $user->bot_seen_at?->toIso8601String(),
+            'human_seen_at' => $user->human_seen_at?->toIso8601String(),
+            // Per-seat control, since a player can drive several tables at once.
+            'seats' => $seats->map(fn ($s) => [
+                'table_id' => $s->table_id,
+                'seat_no' => $s->seat_no,
+                'control' => $s->is_bot ? 'bot' : 'human',
+            ])->values(),
+        ];
     }
 
     /** Full archived record of one hand — feeds the step-through replay. */

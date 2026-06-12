@@ -33,6 +33,19 @@ function posFor(maxSeats, seatNo, portrait) {
 // Games with no community board (stud + draw families).
 const NO_BOARD = ['stud', 'razz', 'draw5'];
 
+// A clear, graphical badge of who is driving a seat — a human by hand, or a
+// machine through the API/bot token (e.g. Hiss). Flips live when control changes.
+function ControlChip({ bot }) {
+  return (
+    <div
+      className={`ctrl-chip ${bot ? 'bot' : 'human'}`}
+      title={bot ? 'BOT — this seat is being played by a machine via the API' : 'HUMAN — this seat is being played by hand'}
+    >
+      <span className="ic">{bot ? '🤖' : '🧑'}</span>{bot ? 'BOT' : 'HUMAN'}
+    </div>
+  );
+}
+
 // A seated-but-not-yet-dealt player. Shown the instant someone buys in so the
 // chair is visible immediately — no cards, just the avatar/stack and a
 // "next hand" tag — until the engine deals them into the coming hand.
@@ -45,7 +58,8 @@ function WaitingSeat({ s, maxSeats, portrait, bbc }) {
       style={{ left: `${x}%`, top: `${y}%` }}
     >
       <div className="av">{s.avatar || (s.is_bot ? '🤖' : '☠️')}</div>
-      <div className="nm">{s.name || `Seat ${s.seat_no}`}{s.is_bot ? ' ⚙' : ''}</div>
+      <div className="nm">{s.name || `Seat ${s.seat_no}`}</div>
+      <ControlChip bot={!!s.is_bot} />
       <div className="stk"><Money c={s.stack} bbCents={bbc} /></div>
       <div className="waiting-tag">NEXT HAND</div>
     </div>
@@ -210,6 +224,10 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
   const waiting = (state.seats || []).filter(
     (s) => s.user_id && s.status !== 'empty' && !inHand.has(s.seat_no)
   );
+  // Live control per seat (flesh vs machine). The seats array updates the instant
+  // a player hands the wheel to a bot, so prefer it over the hand snapshot.
+  const seatBot = {};
+  (state.seats || []).forEach((s) => { seatBot[s.seat_no] = s.is_bot; });
 
   return (
     <div className="felt">
@@ -232,6 +250,7 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
         const [x, y] = posFor(t.max_seats, p.seat, portrait);
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
+        const isBot = seatBot[p.seat] ?? p.is_bot;   // live control flag
         const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
         // HUD placement that never lets two HUDs collide: SIDE-rail seats put
         // their HUD on the OUTWARD vertical side (top-side → up, bottom-side →
@@ -244,11 +263,12 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
         return (
           <React.Fragment key={p.seat}>
             <div
-              className={`seat${isActor ? ' act' : ''}${p.is_bot ? ' bot' : ''}${p.in_hand ? '' : ' folded'}${lower ? ' low' : ' high'}`}
+              className={`seat${isActor ? ' act' : ''}${isBot ? ' bot' : ''}${p.in_hand ? '' : ' folded'}${lower ? ' low' : ' high'}`}
               style={{ left: `${x}%`, top: `${y}%` }}
             >
-              <div className="av">{p.avatar || (p.is_bot ? '🤖' : '☠️')}</div>
-              <div className="nm">{p.name}{p.is_bot ? ' ⚙' : ''}</div>
+              <div className="av">{p.avatar || (isBot ? '🤖' : '☠️')}</div>
+              <div className="nm">{p.name}</div>
+              <ControlChip bot={!!isBot} />
               <div className="stk"><Money c={p.stack} bbCents={bbc} /></div>
               <div className={`hole${nCards > 4 ? ' many' : ''}`}>
                 {p.in_hand && p.hole && p.hole.length

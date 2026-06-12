@@ -38,7 +38,7 @@ class TableManager
     /* ---------------------------------------------------------------- seating */
 
     /** Seat a soul, moving chips from bankroll onto the felt. */
-    public function buyIn(PokerTable $table, User $user, int $amount, ?int $seatNo = null): Seat
+    public function buyIn(PokerTable $table, User $user, int $amount, ?int $seatNo = null, bool $viaBot = false): Seat
     {
         if ($table->tournament_id) {
             throw new \RuntimeException('Tournament seats are assigned by the bracket — register instead.');
@@ -53,7 +53,7 @@ class TableManager
             throw new \RuntimeException('No machines at this felt.');
         }
 
-        return $this->withLock($table, function () use ($table, $user, $amount, $seatNo) {
+        return $this->withLock($table, function () use ($table, $user, $amount, $seatNo, $viaBot) {
             // Already seated?
             $existing = Seat::where('table_id', $table->id)->where('user_id', $user->id)
                 ->where('status', '!=', 'empty')->first();
@@ -86,7 +86,9 @@ class TableManager
                     'user_id' => $user->id,
                     'stack' => $amount,
                     'status' => 'sitting',
-                    'is_bot' => $user->is_bot,
+                    // A house-bot account is always a bot; a human buying in through
+                    // the machine gate (Hiss/API token) is seated as one too.
+                    'is_bot' => $user->is_bot || $viaBot,
                     'joined_at' => now(),
                 ]
             );
@@ -250,9 +252,9 @@ class TableManager
     }
 
     /** A human or bot acts. Returns the fresh redacted view. */
-    public function act(PokerTable $table, User $user, string $action, int $amount = 0): array
+    public function act(PokerTable $table, User $user, string $action, int $amount = 0, bool $viaBot = false): array
     {
-        return $this->withLock($table, function (TableState $state) use ($table, $user, $action, $amount) {
+        return $this->withLock($table, function (TableState $state) use ($table, $user, $action, $amount, $viaBot) {
             if (!$this->handInProgress($state)) {
                 throw new \RuntimeException('No hand in progress.');
             }
@@ -263,6 +265,13 @@ class TableManager
             $engine = HandEngine::fromState($state->state);
             if ($engine->toAct() !== $seat) {
                 throw new \RuntimeException('Not your turn.');
+            }
+            // Reflect who is driving the seat right now — flesh or machine. A human
+            // who lets Hiss take the wheel (acts through the API token) flips to a
+            // bot here, and flips back the moment they act in the browser again.
+            if (!$user->is_bot) {
+                Seat::where('table_id', $table->id)->where('seat_no', $seat)
+                    ->where('user_id', $user->id)->update(['is_bot' => $viaBot]);
             }
             $engine->apply($seat, $action, $amount);
             $this->persist($table, $state, $engine);
@@ -582,6 +591,7 @@ class TableManager
                 'name' => $s->user?->username ?? $s->user?->name,
                 'avatar' => $s->user?->avatar,
                 'is_bot' => $s->is_bot,
+                'control' => $s->is_bot ? 'bot' : 'human',
                 'stack' => $s->stack,
                 'status' => $s->status,
             ])->values(),

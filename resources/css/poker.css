@@ -105,6 +105,15 @@ label{display:block;font-family:var(--pk-mono);font-size:11px;letter-spacing:.12
 .seat.waiting .waiting-tag{font-family:var(--pk-mono);font-size:9px;letter-spacing:.14em;color:var(--pk-gold);
   margin-top:4px;opacity:.85;animation:pk-wait-blink 1.4s steps(1,end) infinite}
 @keyframes pk-wait-blink{0%,100%{opacity:.85}50%{opacity:.3}}
+/* Who's driving the seat — flesh or machine. A clear, colour-coded badge. */
+.ctrl-chip{display:inline-flex;align-items:center;gap:4px;margin:3px auto 0;padding:1px 7px 1px 5px;
+  border-radius:20px;font-family:var(--pk-mono);font-size:8.5px;font-weight:800;letter-spacing:.1em;
+  line-height:1.7;border:1px solid;width:max-content}
+.ctrl-chip .ic{font-size:10px;line-height:1}
+.ctrl-chip.human{color:#7fd6ff;border-color:rgba(127,214,255,.5);background:rgba(127,214,255,.12)}
+.ctrl-chip.bot{color:#5dffa0;border-color:rgba(93,255,160,.55);background:rgba(93,255,160,.14);
+  box-shadow:0 0 9px rgba(93,255,160,.25)}
+.skin-mobile .ctrl-chip{font-size:8px;padding:1px 6px 1px 4px}
 .seat .bet{font-family:var(--pk-mono);font-size:11px;color:var(--pk-scs);margin-top:3px}
 /* The dealer puck — a proper casino button resting on the felt. */
 .dealer-puck{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;

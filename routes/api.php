@@ -23,6 +23,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/hands/{hand}', [PlayController::class, 'hand']);
     Route::get('/players', [PlayController::class, 'players']);
     Route::get('/players/{username}', [PlayController::class, 'playerStats']);
+    Route::get('/players/{username}/control', [PlayController::class, 'control']);
     Route::get('/tables/{table}/hud', [\App\Http\Controllers\HudController::class, 'table']);
     Route::get('/hud/profiles', [\App\Http\Controllers\HudController::class, 'index']);
     Route::get('/tournaments', [\App\Http\Controllers\TournamentController::class, 'index']);
