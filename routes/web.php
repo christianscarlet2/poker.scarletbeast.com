@@ -101,6 +101,21 @@ Route::get('/logout', function (\Illuminate\Http\Request $r) {
     return redirect()->away(($host && str_ends_with($host, 'scarletbeast.com')) ? $return : url('/'));
 });
 
+// Post-login success page (SSO lands here instead of bouncing to /login).
+Route::get('/welcome', function (\Illuminate\Http\Request $r) {
+    $u = \Illuminate\Support\Facades\Auth::user();
+    if (! $u) {
+        return redirect('/login');
+    }
+    $to = $r->query('to', '/');
+    // Never let "continue" point back at an auth page (the original confusion).
+    $path = parse_url($to, PHP_URL_PATH);
+    if (in_array($path, ['/login', '/register', '/welcome', null], true)) {
+        $to = '/';
+    }
+    return view('signedin', ['user' => $u, 'via' => $r->query('via'), 'to' => $to]);
+});
+
 /* ---------------------------------------------------- public felt reads */
 Route::prefix('api')->group(function () {
     Route::get('/lobby', [PlayController::class, 'lobby']);

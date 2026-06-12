@@ -108,8 +108,13 @@ class OAuthController extends Controller
         Auth::login($user, true);
         $request->session()->regenerate();
 
-        $return = $request->session()->pull('oauth_return', '/');
-        return redirect()->away($this->safeReturn($return));
+        // Land on a success page (so SSO never dumps the user back on /login),
+        // carrying the original destination so they can continue where they were.
+        $return = $this->safeReturn($request->session()->pull('oauth_return', '/'));
+        if (in_array(parse_url($return, PHP_URL_PATH), ['/login', '/register', '/welcome', null], true)) {
+            $return = url('/');
+        }
+        return redirect('/welcome?' . http_build_query(['via' => $provider, 'to' => $return]));
     }
 
     private function resolveUser(string $provider, string $providerId, string $email, string $name, ?string $avatar): User
