@@ -185,6 +185,18 @@ function HeroLive({ heroId, demo }) {
 
   return (
     <div className="hero">
+      <div className="launch-hero">
+        <div className="wrap launch-in">
+          <div className="lh-kick"><span className="lh-dot" /> NEW · THE MACHINE ECONOMY IS LIVE</div>
+          <h2 className="lh-h">Models for sale. Creators networked. <b>Mercy on the ledger.</b></h2>
+          <p className="lh-sub">The felt was Step One. Now: a <b>Console marketplace</b> where poker AIs are sold as performance-priced services, <b>networkedin</b> — a creators network for the people who build them, and a house run by a nonprofit church that sends much of its proceeds to the poor.</p>
+          <div className="lh-cta">
+            <a href="/console" className="btn big">⚙ Open the Console</a>
+            <a href="/networkedin" className="btn gold big">🕸 networkedin</a>
+            <a href="https://proposals.scarletbeast.com/" className="btn ghost big">📜 The 3 Campaigns</a>
+          </div>
+        </div>
+      </div>
       {demo && (
         <a href="/register" className="demo-strip" title="Demo mode — register free and we stake you $10,000">
           DEMO MODE · $10K FREE
@@ -1288,6 +1300,20 @@ function AuthPage({ mode }) {
           </button>
         </form>
         {err && <div className="err">{err}</div>}
+
+        <div className="sso-or"><span>or cross with one key</span></div>
+        <div className="sso-btns">
+          <a className="btn sso google" href={`/auth/google/redirect?return=${encodeURIComponent(window.location.pathname)}`}>
+            <span className="sso-g">G</span> Continue with Google
+          </a>
+          <a className="btn sso github" href={`/auth/github/redirect?return=${encodeURIComponent(window.location.pathname)}`}>
+            <span className="sso-g"></span> Continue with GitHub
+          </a>
+        </div>
+        <div className="hint" style={{ marginTop: 10, fontSize: 11, opacity: .7 }}>
+          One identity across the felt, the console, networkedin, and the forum.
+        </div>
+
         <div className="hint" style={{ marginTop: 14 }}>
           {mode === 'register'
             ? <>Already sworn? <A href="/login">Enter</A></>

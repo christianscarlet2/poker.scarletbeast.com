@@ -35,4 +35,24 @@ return [
         ],
     ],
 
+    // Estate SSO upstream identity providers.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT', 'https://poker.scarletbeast.com/auth/google/callback'),
+    ],
+
+    'github' => [
+        'client_id' => env('GITHUB_CLIENT_ID'),
+        'client_secret' => env('GITHUB_CLIENT_SECRET'),
+        'redirect' => env('GITHUB_REDIRECT', 'https://poker.scarletbeast.com/auth/github/callback'),
+    ],
+
+
+    'akaunting' => [
+        'url' => env('AKAUNTING_URL'),
+        'token' => env('AKAUNTING_TOKEN'),
+        'company' => env('AKAUNTING_COMPANY', 1),
+    ],
+
 ];

@@ -8,6 +8,8 @@ export default defineConfig({
             input: [
                 'resources/css/poker.css',
                 'resources/js/poker/main.jsx',
+                'resources/css/networkedin.css',
+                'resources/js/networkedin/app.jsx',
             ],
             refresh: true,
         }),

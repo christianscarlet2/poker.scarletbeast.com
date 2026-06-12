@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['username', 'name', 'email', 'password', 'is_admin', 'is_bot', 'chips', 'api_token_hash', 'bot_engine', 'avatar', 'hud_profile_id', 'referral_code', 'referred_by', 'rakeback_accrued', 'affiliate_accrued', 'rakeback_lifetime', 'affiliate_lifetime'])]
+#[Fillable(['username', 'name', 'email', 'password', 'is_admin', 'is_bot', 'chips', 'api_token_hash', 'bot_engine', 'avatar', 'oauth', 'hud_profile_id', 'referral_code', 'referred_by', 'rakeback_accrued', 'affiliate_accrued', 'rakeback_lifetime', 'affiliate_lifetime'])]
 #[Hidden(['password', 'remember_token', 'api_token_hash'])]
 class User extends Authenticatable
 {
@@ -24,6 +24,7 @@ class User extends Authenticatable
             'is_admin' => 'boolean',
             'is_bot' => 'boolean',
             'chips' => 'integer',
+            'oauth' => 'array',
         ];
     }
 
@@ -50,5 +51,20 @@ class User extends Authenticatable
     public function isBot(): bool
     {
         return $this->is_bot;
+    }
+
+    public function creatorProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(CreatorProfile::class);
+    }
+
+    public function creatorPosts(): HasMany
+    {
+        return $this->hasMany(CreatorPost::class);
+    }
+
+    public function creatorMedia(): HasMany
+    {
+        return $this->hasMany(CreatorMedia::class);
     }
 }

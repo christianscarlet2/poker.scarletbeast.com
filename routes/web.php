@@ -34,6 +34,11 @@ Route::get('/rewards', $spa);
 Route::get('/casino', $spa);
 Route::get('/casino/{game}', $spa)->where('game', '[a-z_]+');
 
+// networkedin — the creators network (its own React shell + API).
+Route::get('/networkedin', [\App\Http\Controllers\NetworkedinController::class, 'app']);
+Route::get('/networkedin/forum/{any?}', fn () => redirect('https://forum.scarletbeast.com'))->where('any', '.*');
+Route::get('/networkedin/{any}', [\App\Http\Controllers\NetworkedinController::class, 'app'])->where('any', '.*');
+
 // Server-rendered API documentation (works without JS; full chrome + marquee).
 Route::view('/api-docs', 'apidocs');
 Route::view('/docs', 'apidocs');
@@ -83,6 +88,19 @@ Route::post('/auth/login', [AuthController::class, 'login']);
     Route::post('/auth/2fa', [AuthController::class, 'twofa']);
 Route::post('/auth/logout', [AuthController::class, 'logout']);
 
+/* ----------------------------------- estate SSO (Google / GitHub OAuth) */
+Route::get('/auth/{provider}/redirect', [\App\Http\Controllers\OAuthController::class, 'redirect'])->where('provider', 'google|github');
+Route::get('/auth/{provider}/callback', [\App\Http\Controllers\OAuthController::class, 'callback'])->where('provider', 'google|github');
+Route::match(['get', 'options'], '/api/sso/whoami', [\App\Http\Controllers\OAuthController::class, 'whoami']);
+Route::get('/logout', function (\Illuminate\Http\Request $r) {
+    \Illuminate\Support\Facades\Auth::logout();
+    $r->session()->invalidate();
+    $r->session()->regenerateToken();
+    $return = $r->query('return', '/');
+    $host = parse_url($return, PHP_URL_HOST);
+    return redirect()->away(($host && str_ends_with($host, 'scarletbeast.com')) ? $return : url('/'));
+});
+
 /* ---------------------------------------------------- public felt reads */
 Route::prefix('api')->group(function () {
     Route::get('/lobby', [PlayController::class, 'lobby']);
@@ -101,6 +119,16 @@ Route::prefix('api')->group(function () {
     Route::post('/tables/{table}/detonate', [PlayController::class, 'detonate']);
     Route::get('/tables/{table}/chat', [\App\Http\Controllers\ChatController::class, 'index']);
     Route::get('/casino/{game}/hot', [\App\Http\Controllers\CasinoController::class, 'hot']);
+
+    // Global wallet — public estate ticker (house cash on hand + rakeback).
+    Route::get('/wallet/global', [\App\Http\Controllers\GlobalWalletController::class, 'show']);
+
+    // networkedin public reads
+    Route::get('/networkedin/feed', [\App\Http\Controllers\NetworkedinController::class, 'feed']);
+    Route::get('/networkedin/directory', [\App\Http\Controllers\NetworkedinController::class, 'directory']);
+    Route::get('/networkedin/me', [\App\Http\Controllers\NetworkedinController::class, 'me']);
+    Route::get('/networkedin/profile/{slug}', [\App\Http\Controllers\NetworkedinController::class, 'profile']);
+    Route::get('/networkedin/posts/{post}/comments', [\App\Http\Controllers\NetworkedinController::class, 'comments']);
 });
 
 /* -------------------------------------------- authenticated player (web) */
@@ -135,6 +163,14 @@ Route::prefix('api')->middleware('auth')->group(function () {
     Route::post('/casino/play', [\App\Http\Controllers\CasinoController::class, 'play']);
     Route::post('/casino/start', [\App\Http\Controllers\CasinoController::class, 'start']);
     Route::post('/casino/act', [\App\Http\Controllers\CasinoController::class, 'act']);
+
+    // networkedin writes
+    Route::post('/networkedin/profile', [\App\Http\Controllers\NetworkedinController::class, 'saveProfile']);
+    Route::post('/networkedin/posts', [\App\Http\Controllers\NetworkedinController::class, 'createPost']);
+    Route::post('/networkedin/posts/{post}/like', [\App\Http\Controllers\NetworkedinController::class, 'toggleLike']);
+    Route::post('/networkedin/posts/{post}/comments', [\App\Http\Controllers\NetworkedinController::class, 'addComment']);
+    Route::post('/networkedin/media', [\App\Http\Controllers\NetworkedinController::class, 'uploadMedia']);
+    Route::post('/networkedin/follow/{username}', [\App\Http\Controllers\NetworkedinController::class, 'toggleFollow']);
 });
 
 /* ------------------------------------------------------------- the altar */
