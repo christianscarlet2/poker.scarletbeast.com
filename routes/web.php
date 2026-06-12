@@ -52,6 +52,7 @@ $developers = function () {
     $owner = 'christianscarlet2';
     $defs = [
         ['repo' => 'poker.scarletbeast.com',      'label' => 'The Felt',       'icon' => '🎰', 'tech' => 'Laravel · React',     'blurb' => 'The whole house — provably-fair engine, heuristic bot brain, table autoscaler, crypto custody, and the public REST API.'],
+        ['repo' => 'hiss-linux',                   'label' => 'The Serpent',    'icon' => '🐍', 'tech' => 'C++ · OpenHoldem',   'blurb' => 'The machine in man-vs-machine — a headless Linux port of the Hiss (OpenHoldem) engine: OpenPPL parser, ~50 symbol engines and poker-eval, fed live by the API instead of a screen-scraper.'],
         ['repo' => 'scarletbeast-poker-desktop',   'label' => 'Desktop Client', 'icon' => '🖥️', 'tech' => 'Electron',            'blurb' => 'Windows, macOS & Linux desktop shell — a hardened window onto the live felt.'],
         ['repo' => 'scarletbeast-poker-mobile',    'label' => 'Mobile Client',  'icon' => '📱', 'tech' => 'Expo · React Native', 'blurb' => 'Android & iOS client — the felt in your pocket, native back-nav and all.'],
     ];

@@ -310,6 +310,7 @@ export function ActionBar({ state, onAct, busy }) {
   const myTurn = you && you.seat_no != null && h && h.to_act === you.seat_no;
   const legal = (myTurn && h.legal) || {};
   const bbc = state.table.bb;
+  const botOn = !!(you && you.bot_connected);
 
   useEffect(() => {
     if (legal.raise) setRaiseTo(legal.raise.min_to);
@@ -319,7 +320,7 @@ export function ActionBar({ state, onAct, busy }) {
 
   // War-room hotkeys (desktop skin): F fold · C check/call · R raise/bet.
   useEffect(() => {
-    if (skin !== 'desktop' || !myTurn || busy) return;
+    if (skin !== 'desktop' || !myTurn || busy || botOn) return;
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
@@ -334,6 +335,17 @@ export function ActionBar({ state, onAct, busy }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [skin, myTurn, busy, legal.fold, legal.check, legal.call, legal.raise, legal.bet, raiseTo]);
+
+  if (botOn) {
+    return (
+      <div className="actbar">
+        <div className="center-msg bot-on" style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+          <span style={{ fontSize: 18 }}>🤖</span>
+          <span>{'Bot connected — it’s playing your seat'}{myTurn ? ' (acting…)' : ''}.</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!myTurn) {
     return (

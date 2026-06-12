@@ -545,6 +545,7 @@ class TableManager
             'you' => $user ? [
                 'seat_no' => $seatNo,
                 'chips' => $user->chips,
+                'bot_connected' => (bool) ($user->bot_seen_at && $user->bot_seen_at->gt(now()->subSeconds(10))),
                 'act_deadline' => $state?->act_deadline?->toIso8601String(),
             ] : null,
             'version' => $state?->version ?? 0,

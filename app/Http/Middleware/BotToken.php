@@ -27,7 +27,7 @@ class BotToken
         }
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
-        $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+        $user->forceFill(['last_seen_at' => now(), 'bot_seen_at' => now()])->saveQuietly();
         return $next($request);
     }
 }
