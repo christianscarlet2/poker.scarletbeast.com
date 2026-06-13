@@ -35,13 +35,16 @@ const NO_BOARD = ['stud', 'razz', 'draw5'];
 
 // A clear, graphical badge of who is driving a seat — a human by hand, or a
 // machine through the API/bot token (e.g. Hiss). Flips live when control changes.
-function ControlChip({ bot }) {
+function ControlChip({ bot, vr }) {
+  const label = vr ? 'Virtual Reality' : bot ? 'BOT' : 'HUMAN';
+  const icon = vr ? '🥽' : bot ? '🤖' : '🧑';
+  const cls = vr ? 'vr' : bot ? 'bot' : 'human';
   return (
     <div
-      className={`ctrl-chip ${bot ? 'bot' : 'human'}`}
-      title={bot ? 'BOT — this seat is being played by a machine via the API' : 'HUMAN — this seat is being played by hand'}
+      className={`ctrl-chip ${cls}`}
+      title={vr ? 'VR — this human is playing in virtual reality' : bot ? 'BOT — this seat is being played by a machine via the API' : 'HUMAN — this seat is being played by hand'}
     >
-      <span className="ic">{bot ? '🤖' : '🧑'}</span>{bot ? 'BOT' : 'HUMAN'}
+      <span className="ic">{icon}</span>{label}
     </div>
   );
 }
@@ -59,7 +62,7 @@ function WaitingSeat({ s, maxSeats, portrait, bbc }) {
     >
       <div className="av">{s.avatar || (s.is_bot ? '🤖' : '☠️')}</div>
       <div className="nm">{s.name || `Seat ${s.seat_no}`}</div>
-      <ControlChip bot={!!s.is_bot} />
+      <ControlChip bot={!!s.is_bot} vr={!!s.is_vr} />
       <div className="stk"><Money c={s.stack} bbCents={bbc} /></div>
       <div className="waiting-tag">NEXT HAND</div>
     </div>
@@ -227,7 +230,8 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
   // Live control per seat (flesh vs machine). The seats array updates the instant
   // a player hands the wheel to a bot, so prefer it over the hand snapshot.
   const seatBot = {};
-  (state.seats || []).forEach((s) => { seatBot[s.seat_no] = s.is_bot; });
+  const seatVr = {};
+  (state.seats || []).forEach((s) => { seatBot[s.seat_no] = s.is_bot; seatVr[s.seat_no] = s.is_vr; });
 
   return (
     <div className="felt">
@@ -251,6 +255,7 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
         const isActor = h.to_act === p.seat;
         const win = winners[p.seat];
         const isBot = seatBot[p.seat] ?? p.is_bot;   // live control flag
+        const isVr = !!(seatVr[p.seat] ?? p.is_vr);  // VR human flag
         const nCards = (p.hole?.length || 0) + (p.up?.length || 0);
         // HUD placement that never lets two HUDs collide: SIDE-rail seats put
         // their HUD on the OUTWARD vertical side (top-side → up, bottom-side →
@@ -268,7 +273,7 @@ export default function Felt({ state, mySeat, observer, hud, quiet, effects }) {
             >
               <div className="av">{p.avatar || (isBot ? '🤖' : '☠️')}</div>
               <div className="nm">{p.name}</div>
-              <ControlChip bot={!!isBot} />
+              <ControlChip bot={!!isBot} vr={!!isVr} />
               <div className="stk"><Money c={p.stack} bbCents={bbc} /></div>
               <div className={`hole${nCards > 4 ? ' many' : ''}`}>
                 {p.in_hand && p.hole && p.hole.length
@@ -331,6 +336,7 @@ export function ActionBar({ state, onAct, busy }) {
   const legal = (myTurn && h.legal) || {};
   const bbc = state.table.bb;
   const botOn = !!(you && you.bot_connected);
+  const vrOn = !!(you && you.vr_connected);
 
   useEffect(() => {
     if (legal.raise) setRaiseTo(legal.raise.min_to);
@@ -340,7 +346,7 @@ export function ActionBar({ state, onAct, busy }) {
 
   // War-room hotkeys (desktop skin): F fold · C check/call · R raise/bet.
   useEffect(() => {
-    if (skin !== 'desktop' || !myTurn || busy || botOn) return;
+    if (skin !== 'desktop' || !myTurn || busy || botOn || vrOn) return;
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
@@ -356,6 +362,16 @@ export function ActionBar({ state, onAct, busy }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [skin, myTurn, busy, legal.fold, legal.check, legal.call, legal.raise, legal.bet, raiseTo]);
 
+  if (vrOn) {
+    return (
+      <div className="actbar">
+        <div className="center-msg vr-on" style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+          <span style={{ fontSize: 18 }}>🥽</span>
+          <span>{'Controls disabled — you are connected via Virtual Reality. Act from your VR headset.'}{myTurn ? ' (Your turn.)' : ''}</span>
+        </div>
+      </div>
+    );
+  }
   if (botOn) {
     return (
       <div className="actbar">

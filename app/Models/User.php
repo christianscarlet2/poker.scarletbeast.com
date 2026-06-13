@@ -22,6 +22,7 @@ class User extends Authenticatable
             'last_seen_at' => 'datetime',
             'bot_seen_at' => 'datetime',
             'human_seen_at' => 'datetime',
+            'vr_seen_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'is_bot' => 'boolean',

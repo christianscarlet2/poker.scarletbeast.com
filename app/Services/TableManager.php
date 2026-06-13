@@ -621,15 +621,19 @@ class TableManager
         // felt shows a bot is playing rather than a human.
         $botCutoff = now()->subSeconds(10);
         $botSeat = [];
+        $vrSeat = [];
         foreach ($seats as $s) {
             $botSeat[$s->seat_no] = $s->is_bot
                 || ($s->user && $s->user->bot_seen_at && $s->user->bot_seen_at->gt($botCutoff));
+            // VR seat: a human playing in VR (Unity) stamped vr_seen_at recently.
+            $vrSeat[$s->seat_no] = (bool) ($s->user && $s->user->vr_seen_at && $s->user->vr_seen_at->gt($botCutoff));
         }
         if ($hand && !empty($hand['players'])) {
             foreach ($hand['players'] as $sn => &$pp) {
                 if (!empty($botSeat[$sn])) {
                     $pp['is_bot'] = true;
                 }
+                $pp['is_vr'] = !empty($vrSeat[$sn]);
             }
             unset($pp);
         }
@@ -654,6 +658,7 @@ class TableManager
                 'name' => $s->user?->username ?? $s->user?->name,
                 'avatar' => $s->user?->avatar,
                 'is_bot' => (bool) ($botSeat[$s->seat_no] ?? $s->is_bot),
+                'is_vr' => (bool) ($vrSeat[$s->seat_no] ?? false),
                 'control' => $s->is_bot ? 'bot' : 'human',
                 'stack' => $s->stack,
                 'status' => $s->status,
@@ -663,6 +668,7 @@ class TableManager
                 'seat_no' => $seatNo,
                 'chips' => $user->chips,
                 'bot_connected' => (bool) ($user->bot_seen_at && $user->bot_seen_at->gt(now()->subSeconds(10))),
+                'vr_connected' => (bool) ($user->vr_seen_at && $user->vr_seen_at->gt(now()->subSeconds(10))),
                 'act_deadline' => $state?->act_deadline?->toIso8601String(),
             ] : null,
             'version' => $state?->version ?? 0,

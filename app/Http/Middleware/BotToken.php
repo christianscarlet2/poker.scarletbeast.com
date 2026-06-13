@@ -27,9 +27,20 @@ class BotToken
         }
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
-        // Flag this request as machine-driven so the felt counts the seat as a bot.
-        $request->attributes->set('via_bot', true);
-        $user->forceFill(['last_seen_at' => now(), 'bot_seen_at' => now()])->saveQuietly();
+        // VR handshake: a flesh-and-blood human playing in VR (Unity) sends the secret
+        // header. That seat is a HUMAN in VR -- stamp the human + vr clocks, not the bot one.
+        $vrSecret = (string) config('scarlet.vr_handshake', '');
+        $vrToken = (string) $request->header('X-Scarlet-Beast-VR', '');
+        $isVr = $vrSecret !== '' && hash_equals($vrSecret, $vrToken);
+        if ($isVr) {
+            $request->attributes->set('via_bot', false);
+            $request->attributes->set('via_vr', true);
+            $user->forceFill(['last_seen_at' => now(), 'human_seen_at' => now(), 'vr_seen_at' => now()])->saveQuietly();
+        } else {
+            // Flag this request as machine-driven so the felt counts the seat as a bot.
+            $request->attributes->set('via_bot', true);
+            $user->forceFill(['last_seen_at' => now(), 'bot_seen_at' => now()])->saveQuietly();
+        }
         return $next($request);
     }
 }

@@ -639,3 +639,6 @@ body.skin-mobile #poker-root{padding-bottom:74px}
 .hb-trash{font-family:var(--pk-mono);font-size:11px;letter-spacing:.06em;color:var(--pk-dim);
   border:1px dashed rgba(255,36,24,.4);border-radius:8px;padding:6px 12px}
 .hb-trash:hover{color:var(--pk-scs);border-color:rgba(255,36,24,.7);background:rgba(255,36,24,.08)}
+
+.ctrl-chip.vr{color:#ff9ad5;border-color:rgba(255,154,213,.6);background:rgba(255,154,213,.16)}
+.center-msg.vr-on{color:#ff9ad5}
