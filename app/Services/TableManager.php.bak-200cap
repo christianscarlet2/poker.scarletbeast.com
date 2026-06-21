@@ -350,15 +350,15 @@ class TableManager
                 // stops. Humans and tournament felts are never touched.
                 if (DemoMode::on() && !$table->tournament_id) {
                     // Ride model: rebuy only TRULY busted bots (< 1bb) or sit-outs to 100bb,
-                    // and cap runaway stacks at 200bb. Everything between RIDES hand-to-hand for
+                    // and cap runaway stacks at 400bb. Everything between RIDES hand-to-hand for
                     // organic short/mid/deep depth (a sub-min stack is a valid short-stack jam spot).
                     Seat::where('table_id', $table->id)->where('is_bot', true)->whereNotNull('user_id')
                         ->where(fn ($q) => $q->where('stack', '<', $table->big_blind)
                                              ->orWhere('status', 'sitting_out'))
                         ->update(['stack' => $table->max_buy_in, 'status' => 'sitting']);
                     Seat::where('table_id', $table->id)->where('is_bot', true)->whereNotNull('user_id')
-                        ->where('stack', '>', 200 * (int) $table->big_blind)
-                        ->update(['stack' => 200 * (int) $table->big_blind]);
+                        ->where('stack', '>', 400 * (int) $table->big_blind)
+                        ->update(['stack' => 400 * (int) $table->big_blind]);
                 }
                 // Brief breath between hands.
                 $last = $state->updated_at;
@@ -429,7 +429,7 @@ class TableManager
     private function startHandLocked(PokerTable $table, TableState $state): bool
     {
         // Stacks RIDE hand-to-hand for organic stack-depth diversity (short/mid/deep). tick()
-        // rebuys busted bots to 100bb + caps runaway stacks at 200bb between hands, so the
+        // rebuys busted bots to 100bb + caps runaway stacks at 400bb between hands, so the
         // distribution stays realistic + bounded (no million-bb runaway). Humans untouched.
         $seats = Seat::where('table_id', $table->id)
             ->where('status', 'sitting')->where('stack', '>', 0)

@@ -18,25 +18,15 @@ class BotBrain
     /** @return array{0:string,1:int} [action, amount] */
     public function decide(HandEngine $engine, int $seat, string $botEngine = ''): array
     {
+        if (str_starts_with($botEngine, 'hiss-nn')) { $h = $this->decideHissNN($engine, $seat); if ($h !== null) return $h; }
+        elseif (str_starts_with($botEngine, 'hiss-style:')) { $h = $this->decideHissStyled($engine, $seat, substr($botEngine, 11)); if ($h !== null) return $h; }
+        elseif (str_starts_with($botEngine, 'hiss')) { $h = $this->decideHiss($engine, $seat); if ($h !== null) return $h; }
         $view = $engine->view($seat);           // includes own hole cards
         $legal = $engine->legalActions($seat);
         if (empty($legal)) {
             return ['check', 0];
         }
-        // Pick a brain; null means "fall back to the heuristic".
-        $brain = null;
-        if (str_starts_with($botEngine, 'hiss-nn')) { $brain = $this->decideHissNN($engine, $seat); }
-        elseif (str_starts_with($botEngine, 'hiss-style:')) { $brain = $this->decideHissStyled($engine, $seat, substr($botEngine, 11)); }
-        elseif (str_starts_with($botEngine, 'hiss')) { $brain = $this->decideHiss($engine, $seat); }
-        if ($brain === null) { $brain = $this->decideHeuristic($view, $seat, $legal); }
-        // House guardrails (sizing + no reckless donk) over WHATEVER brain decided.
-        return $this->applyGuardrails($view, $seat, $legal, $brain);
-    }
 
-    /** Built-in tight-aggressive heuristic (the fallback brain). Reads strength, pot odds, position,
-     *  then bets/calls/folds/bluffs with enough variance to feel alive. */
-    private function decideHeuristic(array $view, int $seat, array $legal): array
-    {
         $p = $view['players'][$seat];
         $hole = $p['hole'];
         $up = $p['up'] ?? [];
@@ -85,70 +75,6 @@ class BotBrain
             return ['call', 0];
         }
         return isset($legal['fold']) ? ['fold', 0] : ['check', 0];
-    }
-
-    /**
-     * HOUSE GUARDRAILS layered on top of every brain — fixes the "all-in every hand" degeneracy
-     * (a degenerate NN champion was jamming) and disciplines sizing per Emrald's rules:
-     *   1) NO RECKLESS DONK BET: a postflop LEAD (bet, nothing to call) from OUT OF POSITION with a
-     *      hand weaker than ~two-pair is converted to a CHECK. Only hands worth donking actually lead.
-     *   2) SIZING: every bet/raise is sized to 3x pot (decent) or 4x pot (strong) by hand strength,
-     *      clamped to the legal range. This REPLACES all-in jams — the bot only reaches all-in when
-     *      3-4x pot already exceeds its stack (i.e. it is genuinely pot-committed).
-     * Fold / check / call always pass through untouched, and every result stays within legalActions.
-     */
-    private function applyGuardrails(array $view, int $seat, array $legal, array $brain): array
-    {
-        $act = $brain[0] ?? 'check';
-        if (!in_array($act, ['bet', 'raise'], true)) {
-            return $brain;                                   // fold/check/call/draw untouched
-        }
-        $p = $view['players'][$seat] ?? null;
-        if (!$p) {
-            return $brain;
-        }
-        $board = $view['board'] ?? [];
-        $pot = max(1, (int) ($view['pot'] ?? 1));
-        $rules = GameType::get($view['game'] ?? 'nlhe');
-        $strength = $this->strengthFor($rules, $p['hole'] ?? [], $p['up'] ?? [], $board);
-
-        // 1) Donk-bet guard: weak postflop lead from out of position -> just check (or fold to a bet).
-        if ($act === 'bet' && !empty($board) && !$this->inPosition($view, $seat) && $strength < 0.62) {
-            if (isset($legal['check'])) return ['check', 0];
-            if (isset($legal['call']))  return ['call', 0];
-            return isset($legal['fold']) ? ['fold', 0] : $brain;
-        }
-
-        // 2) 3x / 4x pot sizing by strength, clamped to legal.
-        $mult = $strength >= 0.80 ? 4.0 : 3.0;
-        $target = (int) round($pot * $mult);
-        if ($act === 'bet' && isset($legal['bet'])) {
-            return ['bet', max($legal['bet']['min'], min($legal['bet']['max'], $target))];
-        }
-        if ($act === 'raise' && isset($legal['raise'])) {
-            $committed = (int) ($p['committed_street'] ?? 0);
-            $to = $committed + $target;
-            return ['raise', max($legal['raise']['min_to'], min($legal['raise']['max_to'], $to))];
-        }
-        return $brain;
-    }
-
-    /** Are we last to act this street (in position)? Postflop the button acts last; the in-hand player
-     *  with the highest post-button order acts last. OOP = someone in-hand acts after us. */
-    private function inPosition(array $view, int $seat): bool
-    {
-        $players = $view['players'] ?? [];
-        if (empty($players)) return true;
-        $n = max(array_keys($players)) + 1;
-        if ($n <= 0) return true;
-        $button = (int) ($view['button'] ?? 0);
-        $myOrder = ($seat - $button - 1 + $n) % $n;
-        foreach ($players as $s => $pl) {
-            if ((int) $s === $seat || empty($pl['in_hand'])) continue;
-            $ord = ((int) $s - $button - 1 + $n) % $n;
-            if ($ord > $myOrder) return false;               // someone acts after us -> we're OOP
-        }
-        return true;
     }
 
     /** Route a hiss-engine bot to the local Hiss /decide service; null -> fall back to the heuristic. */
@@ -232,59 +158,27 @@ class BotBrain
         $dr = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($dr) || !isset($dr['sym'])) return null;
         $nn = $this->postJson(env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide'),
-            ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'], 'sample' => true], 3);
-        $usedNN = (is_array($nn) && isset($nn['action']) && empty($nn['error']));
-        $r = $usedNN ? $nn : $dr;  // fall back to OHF if the NN service is down
+            ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb']], 3);
+        $r = (is_array($nn) && isset($nn['action']) && empty($nn['error'])) ? $nn : $dr;  // fall back to OHF
         $a = $r['action'];
         $betBB = (float) ($r['f$betsize'] ?? 0);
         $allin = ((float) ($r['f$allin'] ?? 0)) > 0;
         $bb = max(1, (int) $view['bb']);
-        $result = null;
-        if ($a === 'fold')  $result = isset($legal['fold']) ? ['fold', 0] : (isset($legal['check']) ? ['check', 0] : null);
-        elseif ($a === 'check') $result = isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
-        elseif ($a === 'call')  $result = isset($legal['call']) ? ['call', 0] : (isset($legal['check']) ? ['check', 0] : ['fold', 0]);
-        elseif ($a === 'raise' || $a === 'allin') {
+        if ($a === 'fold')  return isset($legal['fold']) ? ['fold', 0] : (isset($legal['check']) ? ['check', 0] : null);
+        if ($a === 'check') return isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
+        if ($a === 'call')  return isset($legal['call']) ? ['call', 0] : (isset($legal['check']) ? ['check', 0] : ['fold', 0]);
+        if ($a === 'raise' || $a === 'allin') {
             if (isset($legal['raise'])) {
                 $to = $allin ? $legal['raise']['max_to'] : (int) round($betBB * $bb);
-                $result = ['raise', max($legal['raise']['min_to'], min($legal['raise']['max_to'], $to))];
-            } elseif (isset($legal['bet'])) {
+                return ['raise', max($legal['raise']['min_to'], min($legal['raise']['max_to'], $to))];
+            }
+            if (isset($legal['bet'])) {
                 $amt = $allin ? $legal['bet']['max'] : (int) round($betBB * $bb);
-                $result = ['bet', max($legal['bet']['min'], min($legal['bet']['max'], $amt))];
-            } else {
-                $result = isset($legal['call']) ? ['call', 0] : ['check', 0];
+                return ['bet', max($legal['bet']['min'], min($legal['bet']['max'], $amt))];
             }
-        } else {
-            $result = isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
+            return isset($legal['call']) ? ['call', 0] : ['check', 0];
         }
-        if ($result === null) return null;
-        // On-policy RL telemetry: log the NN's OWN sampled decision (+ behavior logp) to hiss_rl
-        // for PPO. Only when the NN actually decided (not the OHF fallback). reward backfilled.
-        if ($usedNN) $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0));
-        return $result;
-    }
-
-    /** Capture one ON-POLICY NN self-play decision into hiss_rl for PPO (sym, sampled action,
-     *  realized size, behavior logp). reward_bb backfilled per hand by backfill_rewards.py. */
-    private function emitHissNN(array $view, int $seat, $sym, string $hole, string $board, string $action, array $result, float $logp): void
-    {
-        if (!function_exists('pg_connect')) return;
-        static $cnn = false;
-        try {
-            if ($cnn === false || $cnn === null || pg_connection_status($cnn) !== PGSQL_CONNECTION_OK) {
-                $cnn = @pg_connect(env('HISS_PG_DSN', 'host=127.0.0.1 dbname=hiss user=hiss password=hiss_sb_2026'));
-                if (!$cnn) { $cnn = null; return; }
-            }
-            $handId  = sprintf('t%d-h%d-s%d', (int) $view['table_id'], (int) $view['hand_no'], $seat);
-            $symJson = is_array($sym) ? json_encode($sym) : (is_string($sym) ? $sym : '{}');
-            $raiseto = in_array($result[0], ['raise', 'bet'], true) ? (float) $result[1] : null;
-            pg_query_params(
-                $cnn,
-                'INSERT INTO hiss_rl (daemon_id, hand_id, ts_ms, hole, board, action, raiseto, sym, logp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-                ['hiss-nn', $handId, (int) round(microtime(true) * 1000), $hole, $board, $action, $raiseto, $symJson, $logp]
-            );
-        } catch (\Throwable $e) {
-            // never break a poker decision over telemetry
-        }
+        return isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
     }
 
     /** POST JSON, decode to array or null. */
