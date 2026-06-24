@@ -134,30 +134,4 @@ class AdminController extends Controller
         $bal = Bankroll::adjust($user->id, $data['chips'], 'bonus', $data['memo'] ?? 'Warden grant');
         return response()->json(['ok' => true, 'balance' => $bal]);
     }
-
-    /** WARDEN: train-randomizer (fleet domain randomization) status. `running` = the BotBrain.php toggle file
-     *  is present; plus live fleet activity from the postgres training DB (best-effort). [Emrald] */
-    public function trainrandStatus()
-    {
-        $flag = "/tmp/hiss_fleet_randomize";
-        $running = @file_exists($flag);
-        $resp = ["running" => $running, "since" => $running ? @filemtime($flag) : null];
-        try {
-            $pdo = new \PDO("pgsql:host=127.0.0.1;dbname=hiss", "hiss", "hiss_sb_2026", [\PDO::ATTR_TIMEOUT => 2]);
-            $cut = (int) ((microtime(true) * 1000) - 120000);
-            $resp["rows_2min"] = (int) $pdo->query("SELECT count(*) FROM hiss_rl WHERE ts_ms > $cut")->fetchColumn();
-            $resp["branches"] = $pdo->query("SELECT DISTINCT sym->>'obsbranch' b FROM (SELECT sym FROM hiss_rl ORDER BY ts_ms DESC LIMIT 60) q WHERE sym->>'obsbranch' IS NOT NULL ORDER BY 1")->fetchAll(\PDO::FETCH_COLUMN);
-        } catch (\Throwable $e) {
-            $resp["db"] = "unavailable";
-        }
-        return response()->json($resp);
-    }
-
-    /** WARDEN: turn the fleet train-randomizer on/off (touch/remove the toggle file BotBrain.php reads). */
-    public function trainrandToggle(Request $request)
-    {
-        $flag = "/tmp/hiss_fleet_randomize";
-        if ((bool) $request->input("on", true)) { @touch($flag); } else { @unlink($flag); }
-        return $this->trainrandStatus();
-    }
 }

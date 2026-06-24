@@ -151,35 +151,6 @@ class BotBrain
         return true;
     }
 
-    /** Inject game-type + last-aggressor + (when /tmp/hiss_fleet_randomize exists) RANDOMIZED synapse dials,
-     *  observer branch, and game style into the /decide seat-view. The fleet ACTUALLY plays these, so on-policy
-     *  rewards match -> diverse training data spanning the whole strategy space. Stable within a hand. The
-     *  toggle file lets you turn it OFF for a clean NN-vs-OHF measurement. [Emrald: fleet runs brain + random dials] */
-    private function hissEnrich(array &$sv, array $view, int $seat): void
-    {
-        $sv['gametype'] = 'holdem';
-        $aggr = -1; $mx = 0.0;
-        foreach (($view['players'] ?? []) as $i => $pl) {
-            if ((int) $i === $seat) continue;
-            $b = (float) ($pl['committed_street'] ?? 0);
-            if ($b > $mx) { $mx = $b; $aggr = (int) $i; }
-        }
-        $sv['aggressor'] = $aggr;
-        if (!@file_exists('/tmp/hiss_fleet_randomize')) return;
-        $hand = (int) ($view['hand_no'] ?? $view['hand_id'] ?? 0);
-        mt_srand($hand * 64 + $seat);
-        $rr = function () { return round(mt_rand(0, 1000) / 1000.0, 3); };
-        $sv['brain'] = [
-            'openai_steer_anchor' => [11, 12, 13][mt_rand(0, 2)],
-            'openai_knob_openrange' => $rr(), 'openai_knob_aggro' => $rr(),
-            'openai_knob_bluff' => $rr(), 'openai_knob_cbet' => $rr(),
-            'obsbranch' => mt_rand(0, 7),
-            'obsbranch_aggro' => $rr(), 'obsbranch_bluff' => $rr(),
-            'obsbranch_openrange' => $rr(), 'obsbranch_affinity' => 1.0,
-        ];
-        mt_srand();
-    }
-
     /** Route a hiss-engine bot to the local Hiss /decide service; null -> fall back to the heuristic. */
     private function decideHiss(HandEngine $engine, int $seat): ?array
     {
@@ -201,7 +172,6 @@ class BotBrain
             'stack' => (float) $p['stack'], 'bet' => (float) $p['committed_street'],
             'sblind' => (float) $view['sb'], 'bblind' => (float) $view['bb'],
         ];
-        $this->hissEnrich($sv, $view, $seat);
         $url = env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide');
         $ctx = stream_context_create(['http' => ['method' => 'POST', 'timeout' => 3,
             'header' => "Content-Type: application/json\r\n", 'content' => json_encode($sv)]]);
@@ -259,7 +229,6 @@ class BotBrain
             'stack' => (float) $p['stack'], 'bet' => (float) $p['committed_street'],
             'sblind' => (float) $view['sb'], 'bblind' => (float) $view['bb'],
         ];
-        $this->hissEnrich($sv, $view, $seat);
         $dr = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($dr) || !isset($dr['sym'])) return null;
         $nn = $this->postJson(env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide'),

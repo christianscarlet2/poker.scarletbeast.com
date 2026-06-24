@@ -83,7 +83,6 @@ $developers = function () {
 };
 Route::get('/developers', $developers);
 Route::get('/dev', $developers);
-Route::view('/warden', 'warden')->middleware(['auth', 'admin']);
 Route::view('/developers/bot-profile', 'bot-profile');
 Route::view('/bot-profile', 'bot-profile');
 
@@ -207,8 +206,6 @@ Route::prefix('api/admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('/withdrawals/{withdrawal}/approve', [AdminController::class, 'approveWithdrawal']);
     Route::post('/withdrawals/{withdrawal}/reject', [AdminController::class, 'rejectWithdrawal']);
     Route::post('/grant', [AdminController::class, 'grantChips']);
-    Route::get('/trainrand', [AdminController::class, 'trainrandStatus']);
-    Route::post('/trainrand', [AdminController::class, 'trainrandToggle']);
 
     Route::post('/tournaments', [\App\Http\Controllers\TournamentController::class, 'store']);
     Route::post('/tournaments/{tournament}/start', [\App\Http\Controllers\TournamentController::class, 'start']);
