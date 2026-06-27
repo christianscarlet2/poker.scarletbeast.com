@@ -306,15 +306,6 @@ class BotBrain
                 if (!$cnn) { $cnn = null; return; }
             }
             $handId  = sprintf('t%d-h%d-s%d', (int) $view['table_id'], (int) $view['hand_no'], $seat);
-            // Anti-runaway: a stuck/polling table can call BotBrain for the SAME decision
-            // spot thousands of times; without this guard one (hand,seat) ballooned to >1M
-            // unlabelable hiss_rl rows (2026-06). De-dup repeated polls of the same spot,
-            // mirroring collect.py's (hand_id, board, hole) key. Bounded for the long-lived bot.
-            static $seen = [];
-            $spot = $handId . '|' . $board . '|' . $hole;
-            if (isset($seen[$spot])) return;
-            if (count($seen) > 20000) $seen = [];
-            $seen[$spot] = true;
             $symJson = is_array($sym) ? json_encode($sym) : (is_string($sym) ? $sym : '{}');
             $raiseto = in_array($result[0], ['raise', 'bet'], true) ? (float) $result[1] : null;
             pg_query_params(
