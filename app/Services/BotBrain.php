@@ -25,7 +25,7 @@ class BotBrain
         }
         // Pick a brain; null means "fall back to the heuristic".
         $brain = null;
-        if (str_starts_with($botEngine, 'hiss-nn')) { $brain = $this->decideHissNN($engine, $seat); }
+        if (str_starts_with($botEngine, 'hiss-nn')) { $brain = $this->decideHissNN($engine, $seat, $botEngine); }
         elseif (str_starts_with($botEngine, 'hiss-style:')) { $brain = $this->decideHissStyled($engine, $seat, substr($botEngine, 11)); }
         elseif (str_starts_with($botEngine, 'hiss')) { $brain = $this->decideHiss($engine, $seat); }
         if ($brain === null) { $brain = $this->decideHeuristic($view, $seat, $legal); }
@@ -239,7 +239,7 @@ class BotBrain
     /** NN-champion bot: get the infoset (sym) from /decide, then the ACTION from the NN service.
      *  Falls back to the OHF action if the NN service is down. Does NOT emit training rows
      *  (training data stays pure OHF self-play). */
-    private function decideHissNN(HandEngine $engine, int $seat): ?array
+    private function decideHissNN(HandEngine $engine, int $seat, string $botEngine = 'hiss-nn'): ?array
     {
         $view = $engine->view($seat);
         $legal = $engine->legalActions($seat);
@@ -262,7 +262,12 @@ class BotBrain
         $this->hissEnrich($sv, $view, $seat);
         $dr = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($dr) || !isset($dr['sym'])) return null;
-        $nn = $this->postJson(env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide'),
+        // A/B routing: the challenger engine hits its own inference service (the candidate model);
+        // everyone else hits the champion. measure_nn scores hiss-nn-chal vs hiss-nn head-to-head.
+        $nnUrl = ($botEngine === 'hiss-nn-chal')
+            ? env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide')
+            : env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide');
+        $nn = $this->postJson($nnUrl,
             ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'], 'sample' => true], 3);
         $usedNN = (is_array($nn) && isset($nn['action']) && empty($nn['error']));
         $r = $usedNN ? $nn : $dr;  // fall back to OHF if the NN service is down
@@ -290,13 +295,13 @@ class BotBrain
         if ($result === null) return null;
         // On-policy RL telemetry: log the NN's OWN sampled decision (+ behavior logp) to hiss_rl
         // for PPO. Only when the NN actually decided (not the OHF fallback). reward backfilled.
-        if ($usedNN) $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0));
+        if ($usedNN) $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
         return $result;
     }
 
     /** Capture one ON-POLICY NN self-play decision into hiss_rl for PPO (sym, sampled action,
      *  realized size, behavior logp). reward_bb backfilled per hand by backfill_rewards.py. */
-    private function emitHissNN(array $view, int $seat, $sym, string $hole, string $board, string $action, array $result, float $logp): void
+    private function emitHissNN(array $view, int $seat, $sym, string $hole, string $board, string $action, array $result, float $logp, string $daemonId = 'hiss-nn'): void
     {
         if (!function_exists('pg_connect')) return;
         static $cnn = false;
@@ -320,7 +325,7 @@ class BotBrain
             pg_query_params(
                 $cnn,
                 'INSERT INTO hiss_rl (daemon_id, hand_id, ts_ms, hole, board, action, raiseto, sym, logp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-                ['hiss-nn', $handId, (int) round(microtime(true) * 1000), $hole, $board, $action, $raiseto, $symJson, $logp]
+                [$daemonId, $handId, (int) round(microtime(true) * 1000), $hole, $board, $action, $raiseto, $symJson, $logp]
             );
         } catch (\Throwable $e) {
             // never break a poker decision over telemetry
