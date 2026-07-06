@@ -545,11 +545,7 @@ class TableManager
 
         // Push final engine stacks (minus any rake) back onto the seats.
         foreach ($s['players'] as $seatNo => $p) {
-            // A seat stack can never be negative. The engine can leave a slightly-negative
-            // post-hand stack on an all-in over-commit / blind-or-rake rounding edge; writing a
-            // negative to the bigint-UNSIGNED `stack` column throws SQLSTATE[22003] every tick and
-            // floods the log (356GB seen). A sub-zero result means the seat is busted -> clamp to 0.
-            $net = max(0, $p['stack'] - ($rakeMap[$seatNo] ?? 0));
+            $net = $p['stack'] - ($rakeMap[$seatNo] ?? 0);
             $s['players'][$seatNo]['stack'] = $net; // keep state consistent for the final view
             $seat = Seat::where('table_id', $table->id)->where('seat_no', $seatNo)->first();
             if (!$seat) {
