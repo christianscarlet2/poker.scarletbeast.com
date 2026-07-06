@@ -262,15 +262,11 @@ class BotBrain
         $this->hissEnrich($sv, $view, $seat);
         $dr = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($dr) || !isset($dr['sym'])) return null;
-        // A/B routing: each candidate engine hits its own inference service; everyone else hits
-        // the champion. measure_nn scores hiss-nn-chal (PPO) and hiss-nn-cfr (Deep CFR) vs hiss-nn.
-        if ($botEngine === 'hiss-nn-cfr') {
-            $nnUrl = env('HISS_NN_CFR_URL', 'http://127.0.0.1:8095/nn-decide');
-        } elseif ($botEngine === 'hiss-nn-chal') {
-            $nnUrl = env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide');
-        } else {
-            $nnUrl = env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide');
-        }
+        // A/B routing: the challenger engine hits its own inference service (the candidate model);
+        // everyone else hits the champion. measure_nn scores hiss-nn-chal vs hiss-nn head-to-head.
+        $nnUrl = ($botEngine === 'hiss-nn-chal')
+            ? env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide')
+            : env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide');
         $nn = $this->postJson($nnUrl,
             ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'], 'sample' => true], 3);
         $usedNN = (is_array($nn) && isset($nn['action']) && empty($nn['error']));
@@ -299,10 +295,7 @@ class BotBrain
         if ($result === null) return null;
         // On-policy RL telemetry: log the NN's OWN sampled decision (+ behavior logp) to hiss_rl
         // for PPO. Only when the NN actually decided (not the OHF fallback). reward backfilled.
-        // Skip hiss-nn-cfr: the Deep CFR net is trained offline, so its off-policy rows would
-        // pollute PPO training (train_ppo.py ingests all hiss_rl rows). It is scored via
-        // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
-        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
+        if ($usedNN) $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
         return $result;
     }
 
