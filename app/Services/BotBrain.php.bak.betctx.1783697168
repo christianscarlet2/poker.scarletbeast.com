@@ -271,13 +271,8 @@ class BotBrain
         } else {
             $nnUrl = env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide');
         }
-        // Betting context for the CFR bridge (the sparse sym omits it): real pot / to-call / stack
-        // so the net can reconstruct a facing-bet state and size bets correctly (not min-raise).
         $nn = $this->postJson($nnUrl,
-            ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'],
-             'pot' => (float) ($view['pot'] ?? 0),
-             'to_call' => max(0.0, (float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0)),
-             'eff_stack' => (float) ($p['stack'] ?? 0), 'sample' => true], 3);
+            ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'], 'sample' => true], 3);
         $usedNN = (is_array($nn) && isset($nn['action']) && empty($nn['error']));
         $r = $usedNN ? $nn : $dr;  // fall back to OHF if the NN service is down
         $a = $r['action'];
