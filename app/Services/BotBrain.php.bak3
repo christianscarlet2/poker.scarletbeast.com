@@ -415,8 +415,7 @@ class BotBrain
         $sym['f$HeadsUpPot']      = $nopp === 1 ? 1.0 : 0.0;
 
         // Blinds, in bb -- matching the live bot, where bblind is pinned to 1.0.
-        $sym['bblind']   = 1.0;      // matches the live bot (bblind pinned to 1.0)
-        $sym['bb_chips'] = $bb;      // what one bb was worth in server chips (diagnostics only)
+        $sym['bblind'] = 1.0;
         $sym['sblind'] = ((float) ($view['sb'] ?? ($bb / 2))) / $bb;
 
         // Position. The single largest positional edge in poker, and the net could not see it.
@@ -474,13 +473,7 @@ class BotBrain
             if (count($seen) > 20000) $seen = [];
             $seen[$spot] = true;
             $symJson = is_array($sym) ? json_encode($sym) : (is_string($sym) ? $sym : '{}');
-            // IN BIG BLINDS, like PotSize/StackSize in the sym. betsize_bucket() divides raiseto by
-            // PotSize; storing chips against a bb-denominated pot inflated every fraction ~50x and
-            // snapped 85% of raises into the largest bucket.
-            $bbChips = max(1e-9, (float) ($view['bb'] ?? 1));
-            $raiseto = in_array($result[0], ['raise', 'bet'], true)
-                ? ((float) $result[1]) / $bbChips
-                : null;
+            $raiseto = in_array($result[0], ['raise', 'bet'], true) ? (float) $result[1] : null;
             pg_query_params(
                 $cnn,
                 'INSERT INTO hiss_rl (daemon_id, hand_id, ts_ms, hole, board, action, raiseto, sym, logp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
