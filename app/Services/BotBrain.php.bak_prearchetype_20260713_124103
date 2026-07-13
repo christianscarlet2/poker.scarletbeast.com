@@ -529,7 +529,7 @@ class BotBrain
         ];
         $r = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($r) || !isset($r['action'])) return null;
-        $a = $this->styleAction($r['action'], $style, is_array($r['sym'] ?? null) ? $r['sym'] : []);
+        $a = $this->perturbAction($r['action'], $style);
         $betBB = (float) ($r['f$betsize'] ?? 0);
         $allin = ((float) ($r['f$allin'] ?? 0)) > 0 || $a === 'allin';
         $bb = max(1, (int) $view['bb']);
@@ -550,35 +550,6 @@ class BotBrain
             return isset($legal['call']) ? ['call', 0] : ['check', 0];
         }
         return isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
-    }
-
-    /** Hand-strength-aware archetype shaping. The TIGHT styles (nit/tag) gate their PREFLOP range by
-     *  handrank169 so they actually MEASURE as their archetype -- the old probability-only perturbation
-     *  left a loose base at VPIP>25, so "nits" never crossed VPIP<15 and produced ZERO opponent reads
-     *  (only stations, which loosen, classified). This makes VPIP the label: top ~13% -> nit, ~24% ->
-     *  tag, played aggressively (raises -> the PFR/AF the classifier also needs). Loose styles keep the
-     *  probabilistic loosening. handrank169: 1=AA (best) .. 169=72o (worst); only meaningful preflop. */
-    private function styleAction(string $a, string $style, array $sym): string
-    {
-        if ($style === 'nit' || $style === 'tag') {
-            $br = (int) ($sym['betround'] ?? 1);
-            $hr = (int) ($sym['handrank169'] ?? 85);
-            $thr = $style === 'nit' ? 22 : 40;           // top ~13% (nit) / ~24% (tag) of 169 hands
-            if ($br <= 1) {                              // PREFLOP: the range gate sets VPIP -> the label
-                if ($hr > $thr) {
-                    return $a === 'check' ? 'check' : 'fold';   // out of range: never voluntary; free check ok
-                }
-                $r = mt_rand() / mt_getrandmax();        // in range: play aggressively (PFR/AF)
-                if ($a === 'call'  && $r < 0.60) return 'raise';
-                if ($a === 'check' && $r < 0.35) return 'raise';
-                return $a;
-            }
-            if ($style === 'nit') {                      // POSTFLOP: nits give up marginal, value strong
-                if ((mt_rand() / mt_getrandmax()) < 0.30 && $a === 'call') return 'fold';
-            }
-            return $a;
-        }
-        return $this->perturbAction($a, $style);         // maniac/station/lag: probabilistic loosening
     }
 
     /** Probabilistically shift the OHF action to emulate a player archetype. */

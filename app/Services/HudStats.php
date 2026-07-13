@@ -71,6 +71,18 @@ class HudStats
         return Cache::remember('hudstats:nn', self::CACHE_TTL, fn () => $this->build($minId));
     }
 
+    /** Rebuild the NN HUD cache with NO dark window: build fresh, then ATOMICALLY swap it in. The
+     *  old poker:hud-warm did Cache::forget() THEN rebuilt (~11min), leaving injectOppModel blind
+     *  ~40% of every 30-min cycle (the cache was literally empty when audited). This keeps the prior
+     *  snapshot serving until the new one is ready, so opponent reads flow ~100% of the time. */
+    public function rebuildNn(int $limitHands = 600000): array
+    {
+        $minId = max(0, (int) Hand::max('id') - $limitHands);
+        $stats = $this->build($minId);
+        Cache::put('hudstats:nn', $stats, self::CACHE_TTL);
+        return $stats;
+    }
+
     private function build(int $minId = 0): array
     {
         $bbOf = PokerTable::pluck('big_blind', 'id');

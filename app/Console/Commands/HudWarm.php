@@ -19,8 +19,9 @@ class HudWarm extends Command
     public function handle(HudStats $hud): int
     {
         $t = microtime(true);
-        Cache::forget('hudstats:nn');
-        $s = $hud->nnStats((int) $this->option('hands'));
+        // build-then-atomic-swap (rebuildNn) instead of forget-then-rebuild: no dark window where
+        // injectOppModel goes blind during the ~11-min rebuild. [opp-read reliability 2026-07-13]
+        $s = $hud->rebuildNn((int) $this->option('hands'));
         // side-dump for the offline opp backfill (backfill_opp.py reads this)
         @file_put_contents('/tmp/hud_nn_stats.json', json_encode($s));
         $this->info(sprintf('hudstats:nn warmed: %d players in %.1fs', count($s), microtime(true) - $t));
