@@ -239,6 +239,57 @@ class BotBrain
     /** NN-champion bot: get the infoset (sym) from /decide, then the ACTION from the NN service.
      *  Falls back to the OHF action if the NN service is down. Does NOT emit training rows
      *  (training data stays pure OHF self-play). */
+    /** Map a villain's HUD stats -> the f$Opp_* feature keys (+ archetype flags) the NN reads.
+     *  Mirror of backfill_opp.py's oppFeatures(); keep the two in sync. */
+    private function oppFeatures(array $s): array
+    {
+        $vpip = (float) ($s['vpip'] ?? 0); $pfr = (float) ($s['pfr'] ?? 0);
+        $af = (float) ($s['af'] ?? 0); $wtsd = (float) ($s['wtsd'] ?? 0);
+        $hands = (int) ($s['hands'] ?? 0); $tb = (float) ($s['threebet'] ?? 0);
+        $fcb = (float) ($s['fold_cbet_f'] ?? 0); $f3b = (float) ($s['fold3bet'] ?? 0);
+        $known = $hands >= 20 ? 1 : 0;
+        $o = [
+            'f$Opp_VPIP' => $vpip, 'f$Opp_PFR' => $pfr, 'f$Opp_AF' => $af, 'f$Opp_WTSD' => $wtsd,
+            'f$Opp_Hands' => min($hands, 100000), 'f$Opp_Known' => $known,
+            'f$Opp_ThreeBetsLight' => $tb > 9 ? 1 : 0,
+            'f$Opp_Foldy' => ($fcb > 55 || $f3b > 65) ? 1 : 0,
+        ];
+        if ($known) {
+            $o['f$Opp_IsNit'] = $vpip < 15 ? 1 : 0;
+            $o['f$Opp_IsLoose'] = $vpip > 32 ? 1 : 0;
+            $o['f$Opp_IsPassive'] = $af < 1.0 ? 1 : 0;
+            $o['f$Opp_IsAggro'] = $af > 2.5 ? 1 : 0;
+            $o['f$Opp_IsStation'] = ($vpip > 30 && $pfr < 12 && $af < 1.2) ? 1 : 0;
+            $o['f$Opp_IsTAG'] = ($vpip >= 15 && $vpip <= 26 && $pfr >= $vpip * 0.6 && $af >= 1.5) ? 1 : 0;
+            $o['f$Opp_IsLAG'] = ($vpip > 26 && $pfr > 18 && $af > 2.0) ? 1 : 0;
+            $o['f$Opp_IsFish'] = ($vpip > 35 && $pfr < 15) ? 1 : 0;
+            $o['f$Opp_IsManiac'] = ($vpip > 45 && $af > 3.5) ? 1 : 0;
+        }
+        return $o;
+    }
+
+    /** Enrich the sym with the current villain's opponent model, read ONLY from the warm hudstats:nn
+     *  cache (never rebuilt on the hot path). Villain = the aggressor we face; else the street's
+     *  biggest bettor. No-op if the cache is cold or the villain is unknown. */
+    private function injectOppModel(array &$sym, array $view, int $seat): void
+    {
+        $agg = isset($sym['aggressorchair']) ? (int) $sym['aggressorchair'] : -1;
+        if ($agg < 0 || $agg === $seat || !isset($view['players'][$agg])) {
+            $mx = 0.0; $agg = -1;
+            foreach (($view['players'] ?? []) as $i => $pl) {
+                if ((int) $i === $seat) continue;
+                $b = (float) ($pl['committed_street'] ?? 0);
+                if ($b > $mx) { $mx = $b; $agg = (int) $i; }
+            }
+        }
+        if ($agg < 0) return;
+        $uid = $view['players'][$agg]['user_id'] ?? null;
+        if (!$uid) return;
+        $all = \Illuminate\Support\Facades\Cache::get('hudstats:nn');
+        if (!is_array($all) || !isset($all[$uid])) return;
+        foreach ($this->oppFeatures($all[$uid]) as $k => $v) { $sym[$k] = $v; }
+    }
+
     private function decideHissNN(HandEngine $engine, int $seat, string $botEngine = 'hiss-nn'): ?array
     {
         $view = $engine->view($seat);
@@ -262,6 +313,12 @@ class BotBrain
         $this->hissEnrich($sv, $view, $seat);
         $dr = $this->postJson(env('HISS_DECIDE_URL', 'http://127.0.0.1:8087/decide'), $sv, 3);
         if (!is_array($dr) || !isset($dr['sym'])) return null;
+        // Opponent model: enrich the LOGGED sym with the villain's HUD read (VPIP/PFR/AF + archetype).
+        // The LIVE sym stays raw until an opp-aware champion is promoted (HISS_OPP_LIVE=1) -- feeding
+        // nonzero f$Opp_* to a net whose norm has sd~=0 there would explode it. [opp-model 2026-07-13]
+        $symLog = $dr['sym'];
+        $this->injectOppModel($symLog, $view, $seat);
+        $symLive = env('HISS_OPP_LIVE', false) ? $symLog : $dr['sym'];
         // A/B routing: each candidate engine hits its own inference service; everyone else hits
         // the champion. measure_nn scores hiss-nn-chal (PPO) and hiss-nn-cfr (Deep CFR) vs hiss-nn.
         if ($botEngine === 'hiss-nn-cfr') {
@@ -274,7 +331,7 @@ class BotBrain
         // Betting context for the CFR bridge (the sparse sym omits it): real pot / to-call / stack
         // so the net can reconstruct a facing-bet state and size bets correctly (not min-raise).
         $nn = $this->postJson($nnUrl,
-            ['sym' => $dr['sym'], 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'],
+            ['sym' => $symLive, 'hole' => $hole, 'board' => $board, 'bblind' => (float) $view['bb'],
              'pot' => (float) ($view['pot'] ?? 0),
              'to_call' => max(0.0, (float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0)),
              'eff_stack' => (float) ($p['stack'] ?? 0), 'sample' => true], 3);
@@ -307,7 +364,7 @@ class BotBrain
         // Skip hiss-nn-cfr: the Deep CFR net is trained offline, so its off-policy rows would
         // pollute PPO training (train_ppo.py ingests all hiss_rl rows). It is scored via
         // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
-        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $dr['sym'], $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
+        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
         return $result;
     }
 

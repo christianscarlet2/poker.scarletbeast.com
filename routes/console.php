@@ -17,3 +17,7 @@ Schedule::command('queue:prune-failed --hours=48')->dailyAt('04:10');
 // read caches every hour, so /players and /player never run a cold full-archive
 // scan on a visitor's request (that once took 150s). See App\Services\PlayerStats.
 // DISABLED-pending-cursor-fix: Schedule::command('poker:stats-refresh')->hourly()->withoutOverlapping();
+
+// NN opponent model: warm the bounded HUD cache (hudstats:nn, recent hands only) off the hot path
+// so BotBrain::injectOppModel is always a cheap cache read. Independent of the disabled full refresh.
+Schedule::command('poker:hud-warm')->everyThirtyMinutes()->withoutOverlapping();

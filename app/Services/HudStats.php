@@ -62,12 +62,23 @@ class HudStats
         return Cache::remember('hudstats:all', self::CACHE_TTL, fn () => $this->build());
     }
 
-    private function build(): array
+    /** Bounded recent-window HUD cache for the NN opponent model. Opponents are mostly stable-style
+     *  bots, so a recent window captures their tendencies while staying cheap enough to warm off the
+     *  hot path (poker:hud-warm). Separate cache key from the live-HUD 'hudstats:all'. */
+    public function nnStats(int $limitHands = 600000): array
+    {
+        $minId = max(0, (int) Hand::max('id') - $limitHands);
+        return Cache::remember('hudstats:nn', self::CACHE_TTL, fn () => $this->build($minId));
+    }
+
+    private function build(int $minId = 0): array
     {
         $bbOf = PokerTable::pluck('big_blind', 'id');
         $acc = []; // user_id => counters
 
-        Hand::orderBy('id')->chunk(500, function ($chunk) use (&$acc, $bbOf) {
+        $q = Hand::orderBy('id');
+        if ($minId > 0) { $q = $q->where('id', '>=', $minId); }
+        $q->chunk(1000, function ($chunk) use (&$acc, $bbOf) {
             foreach ($chunk as $hand) {
                 $this->tally($hand, $acc, max(1, (int) ($bbOf[$hand->table_id] ?? 50)));
             }
