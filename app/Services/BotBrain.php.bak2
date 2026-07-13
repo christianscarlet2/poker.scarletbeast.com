@@ -387,7 +387,7 @@ class BotBrain
         $pot     = ((float) ($view['pot'] ?? 0)) / $bb;
         $toCall  = max(0.0, ((float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0))) / $bb;
         $stack   = ((float) ($p['stack'] ?? 0)) / $bb;
-        $commit  = ((float) ($p['committed_total'] ?? $p['committed_street'] ?? 0)) / $bb;
+        $commit  = ((float) ($p['committed_street'] ?? 0)) / $bb;
 
         // Effective stack: the most that can actually be won/lost against anyone still in the hand.
         $oppStacks = [];
@@ -434,21 +434,6 @@ class BotBrain
         $sym['f$Mzone'] = $m >= 20 ? 5.0 : ($m >= 10 ? 4.0 : ($m >= 6 ? 3.0 : ($m >= 1 ? 2.0 : 1.0)));
 
         $sym['f$Is6Max'] = count($players) <= 6 ? 1.0 : 0.0;
-
-        // Betting history for THIS street. Three more inputs the net was blind to: it could not tell
-        // a limped pot from a three-bet war, because Raises/Calls/Bets were all constant zero.
-        $street = (string) ($view['street'] ?? 'preflop');
-        $raises = 0; $calls = 0; $bets = 0;
-        foreach (($view['actions'] ?? []) as $a) {
-            if ((string) ($a['street'] ?? '') !== $street) continue;
-            $act = (string) ($a['action'] ?? '');
-            if ($act === 'raise') $raises++;
-            elseif ($act === 'call') $calls++;
-            elseif ($act === 'bet') $bets++;
-        }
-        $sym['Raises'] = (float) $raises;
-        $sym['Calls']  = (float) $calls;
-        $sym['Bets']   = (float) $bets;
     }
 
     /** Capture one ON-POLICY NN self-play decision into hiss_rl for PPO (sym, sampled action,

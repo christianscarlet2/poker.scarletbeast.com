@@ -318,7 +318,6 @@ class BotBrain
         // nonzero f$Opp_* to a net whose norm has sd~=0 there would explode it. [opp-model 2026-07-13]
         $symLog = $dr['sym'];
         $this->injectOppModel($symLog, $view, $seat);
-        $this->injectBettingContext($symLog, $view, $seat);   // pot / stacks / position / real opp count
         $symLive = env('HISS_OPP_LIVE', false) ? $symLog : $dr['sym'];
         // A/B routing: each candidate engine hits its own inference service; everyone else hits
         // the champion. measure_nn scores hiss-nn-chal (PPO) and hiss-nn-cfr (Deep CFR) vs hiss-nn.
@@ -367,88 +366,6 @@ class BotBrain
         // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
         if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
         return $result;
-    }
-
-    /** Fill the LOGGED sym with the real betting context: pot, bet-to-call, stacks, position and the
-     *  true opponent count. The emitter never wrote these, so 65 of the champion's 115 inputs were
-     *  dead and it could not compute pot odds (PotSize appears in 0 of 8,987,647 training rows).
-     *
-     *  EVERYTHING IS IN BIG BLINDS. The server counts chips (bb=50); the live ACR bot counts big
-     *  blinds (bblind=1.0). Emitting chips would be a ~50x train/serve skew -- worse than the bug.
-     *
-     *  Logged sym only; the live sym stays raw so this cannot alter how the fleet plays today. */
-    private function injectBettingContext(array &$sym, array $view, int $seat): void
-    {
-        $players = $view['players'] ?? [];
-        $p = $players[$seat] ?? null;
-        if ($p === null) return;
-
-        $bb = max(1e-9, (float) ($view['bb'] ?? 1));
-        $pot     = ((float) ($view['pot'] ?? 0)) / $bb;
-        $toCall  = max(0.0, ((float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0))) / $bb;
-        $stack   = ((float) ($p['stack'] ?? 0)) / $bb;
-        $commit  = ((float) ($p['committed_total'] ?? $p['committed_street'] ?? 0)) / $bb;
-
-        // Effective stack: the most that can actually be won/lost against anyone still in the hand.
-        $oppStacks = [];
-        $nopp = 0;
-        foreach ($players as $s => $pl) {
-            if ((int) $s === $seat || empty($pl['in_hand'])) continue;
-            $nopp++;
-            $oppStacks[] = ((float) ($pl['stack'] ?? 0)) / $bb;
-        }
-        $eff = $oppStacks ? min($stack, max($oppStacks)) : $stack;
-
-        $sym['PotSize']          = $pot;
-        $sym['AmountToCall']     = $toCall;
-        $sym['StackSize']        = $stack;
-        $sym['f$EffStack']       = $eff;
-        $sym['f$SPR']            = $pot > 0 ? $eff / $pot : 0.0;
-        $sym['f$Committed']      = $commit;
-
-        // The real opponent count. It was the OpenHoldem "unknown" sentinel (-1) in 100% of rows, and
-        // both the live path and the equity backfill clamp that to 1 -- so the net was being handed
-        // HEADS-UP equity in a nine-handed game. AJo reads ~0.55 when its true five-way equity is
-        // ~0.25: a mechanical overvaluation of every marginal hand.
-        $sym['nopponents']        = $nopp;
-        $sym['nopponentsplaying'] = $nopp;
-        $sym['f$HeadsUpPot']      = $nopp === 1 ? 1.0 : 0.0;
-
-        // Blinds, in bb -- matching the live bot, where bblind is pinned to 1.0.
-        $sym['bblind'] = 1.0;
-        $sym['sblind'] = ((float) ($view['sb'] ?? ($bb / 2))) / $bb;
-
-        // Position. The single largest positional edge in poker, and the net could not see it.
-        $ip = $this->inPosition($view, $seat) ? 1.0 : 0.0;
-        $street = (string) ($view['street'] ?? 'preflop');
-        $sym['f$InPositionPre']  = $street === 'preflop' ? $ip : 0.0;
-        $sym['f$InPositionPost'] = $street === 'preflop' ? 0.0 : $ip;
-
-        // Stack-depth regime -- the push/fold band is the highest-EV solved part of the game.
-        $sym['f$DeepStack']     = $eff >= 100 ? 1.0 : 0.0;
-        $sym['f$ShortStack']    = $eff <= 25  ? 1.0 : 0.0;
-        $sym['f$PushFoldStack'] = $eff <= 12  ? 1.0 : 0.0;
-
-        $m = $eff / max(1e-9, (float) $sym['sblind'] + 1.0);   // M = stack / (sb + bb), in bb
-        $sym['f$M']     = $m;
-        $sym['f$Mzone'] = $m >= 20 ? 5.0 : ($m >= 10 ? 4.0 : ($m >= 6 ? 3.0 : ($m >= 1 ? 2.0 : 1.0)));
-
-        $sym['f$Is6Max'] = count($players) <= 6 ? 1.0 : 0.0;
-
-        // Betting history for THIS street. Three more inputs the net was blind to: it could not tell
-        // a limped pot from a three-bet war, because Raises/Calls/Bets were all constant zero.
-        $street = (string) ($view['street'] ?? 'preflop');
-        $raises = 0; $calls = 0; $bets = 0;
-        foreach (($view['actions'] ?? []) as $a) {
-            if ((string) ($a['street'] ?? '') !== $street) continue;
-            $act = (string) ($a['action'] ?? '');
-            if ($act === 'raise') $raises++;
-            elseif ($act === 'call') $calls++;
-            elseif ($act === 'bet') $bets++;
-        }
-        $sym['Raises'] = (float) $raises;
-        $sym['Calls']  = (float) $calls;
-        $sym['Bets']   = (float) $bets;
     }
 
     /** Capture one ON-POLICY NN self-play decision into hiss_rl for PPO (sym, sampled action,
