@@ -365,7 +365,7 @@ class BotBrain
         // Skip hiss-nn-cfr: the Deep CFR net is trained offline, so its off-policy rows would
         // pollute PPO training (train_ppo.py ingests all hiss_rl rows). It is scored via
         // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
-        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine, (float) ($nn['bet_logp'] ?? 0.0), array_key_exists('bet_logp', $nn));
+        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine);
         return $result;
     }
 
@@ -454,7 +454,7 @@ class BotBrain
 
     /** Capture one ON-POLICY NN self-play decision into hiss_rl for PPO (sym, sampled action,
      *  realized size, behavior logp). reward_bb backfilled per hand by backfill_rewards.py. */
-    private function emitHissNN(array $view, int $seat, $sym, string $hole, string $board, string $action, array $result, float $logp, string $daemonId = 'hiss-nn', float $betLogp = 0.0, bool $hasBetLogp = false): void
+    private function emitHissNN(array $view, int $seat, $sym, string $hole, string $board, string $action, array $result, float $logp, string $daemonId = 'hiss-nn'): void
     {
         if (!function_exists('pg_connect')) return;
         static $cnn = false;
@@ -483,11 +483,8 @@ class BotBrain
                 : null;
             pg_query_params(
                 $cnn,
-                'INSERT INTO hiss_rl (daemon_id, hand_id, ts_ms, hole, board, action, raiseto, sym, logp, bet_logp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
-                // bet_logp NULL (not 0.0) when the model didn't report one: train_ppo uses NULL to mean
-                // "no behaviour probability for this bucket" and falls back to imitation for that row.
-                // Writing 0.0 would be a LIE -- it reads as log(1.0), i.e. a bucket chosen with certainty.
-                [$daemonId, $handId, (int) round(microtime(true) * 1000), $hole, $board, $action, $raiseto, $symJson, $logp, $hasBetLogp ? $betLogp : null]
+                'INSERT INTO hiss_rl (daemon_id, hand_id, ts_ms, hole, board, action, raiseto, sym, logp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+                [$daemonId, $handId, (int) round(microtime(true) * 1000), $hole, $board, $action, $raiseto, $symJson, $logp]
             );
         } catch (\Throwable $e) {
             // never break a poker decision over telemetry
