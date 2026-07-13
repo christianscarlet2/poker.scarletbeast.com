@@ -282,6 +282,20 @@ class BotBrain
                 if ($b > $mx) { $mx = $b; $agg = (int) $i; }
             }
         }
+        if ($agg < 0) {
+            // Nobody bet this street: we are LEADING/STEALING into passive opponents. Profile the next
+            // active opponent to act after us -- the player our aggression targets. The aggressor-only
+            // selection above missed exactly the spots nit-exploitation lives (attacking a passive nit,
+            // stealing a nit's blind postflop): a nit rarely bets, so it was never the villain, so the
+            // net never got a nit read WHERE the read matters. [passive-target 2026-07-13]
+            $players = $view['players'] ?? [];
+            $n = $players ? (max(array_keys($players)) + 1) : 0;
+            for ($off = 1; $off < $n; $off++) {
+                $i = ($seat + $off) % $n;
+                $pl = $players[$i] ?? null;
+                if ($pl && !empty($pl['in_hand'])) { $agg = $i; break; }
+            }
+        }
         if ($agg < 0) return;
         $uid = $view['players'][$agg]['user_id'] ?? null;
         if (!$uid) return;
@@ -563,7 +577,7 @@ class BotBrain
         if ($style === 'nit' || $style === 'tag') {
             $br = (int) ($sym['betround'] ?? 1);
             $hr = (int) ($sym['handrank169'] ?? 85);
-            $thr = $style === 'nit' ? 22 : 40;           // top ~13% (nit) / ~24% (tag) of 169 hands
+            $thr = $style === 'nit' ? 16 : 38;           // top ~9.5% (nit VPIP~10, clears <15 w/ margin) / ~22% (tag)
             if ($br <= 1) {                              // PREFLOP: the range gate sets VPIP -> the label
                 if ($hr > $thr) {
                     return $a === 'check' ? 'check' : 'fold';   // out of range: never voluntary; free check ok
