@@ -324,15 +324,10 @@ final class HandEngine
         $actions = [];
 
         if ($toCall <= 0) {
-            $actions['check'] = true;
+            $actions['check'] = true;   // nothing to call -> may check, but NOT fold (no free folds)
         } else {
             $actions['fold'] = true;
             $actions['call'] = ['amount' => min($toCall, $p['stack'])];
-        }
-        if ($toCall > 0 && $toCall < $p['stack']) {
-            // fold already added
-        } elseif ($toCall <= 0) {
-            $actions['fold'] = true; // allowed though usually pointless
         }
 
         // Betting / raising, shaped by the variant's structure.
@@ -415,6 +410,13 @@ final class HandEngine
         }
         $toCall = $this->s['current_bet'] - $p['committed_street'];
         $betting = $this->rules()['betting'];
+
+        // Site rule: no folding when you can check for free (nothing to call) — that move is strictly
+        // dominated, so convert it to a check. Preflop the blind is a live bet (toCall > 0), so preflop
+        // folding is unaffected. Enforced here (not just in legalActions) so no API path can bypass it.
+        if ($action === 'fold' && $toCall <= 0) {
+            $action = 'check';
+        }
 
         switch ($action) {
             case 'fold':
