@@ -304,43 +304,6 @@ class BotBrain
         foreach ($this->oppFeatures($all[$uid]) as $k => $v) { $sym[$k] = $v; }
     }
 
-    /**
-     * WHO HAS THE INITIATIVE — the flag that has been dead since day one. [2026-07-14]
-     *
-     * `iamaggressor` was emitted on every decision and was ALWAYS 0: the engine's `aggressorchair`
-     * collapses to -1 once the flop lands, so nothing downstream ever knew who had taken the lead.
-     * C-betting, slow-playing and check-raising are all DEFINED relative to initiative, so the net
-     * could not learn any of them — and the training penalty meant to stop donk-bets ("punish
-     * aggression with air when NOT the aggressor") fired on every postflop bluff, including our own
-     * continuation bets, because the condition was permanently true.
-     *
-     * We hold the initiative if we raised earlier in this hand and nobody has raised over us since —
-     * i.e. there is nothing to call. Facing a bet means someone took the lead back.
-     */
-    private static array $aggAt = [];        // hand_id => [seat => true] : we raised here
-
-    private function injectAggressor(array &$sym, array $view, int $seat): void
-    {
-        $hand = (int) ($view['hand_no'] ?? $view['hand_id'] ?? 0);
-        $p = $view['players'][$seat] ?? [];
-        $toCall = max(0.0, (float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0));
-        $raisedHere = !empty(self::$aggAt[$hand][$seat]);
-        // raised earlier AND nothing to call now => still ours. Facing a bet => somebody re-took it.
-        $sym['iamaggressor'] = ($raisedHere && $toCall <= 0.0) ? 1 : 0;
-        if (count(self::$aggAt) > 500) {                     // long-lived queue worker: don't leak
-            self::$aggAt = array_slice(self::$aggAt, -100, null, true);
-        }
-    }
-
-    /** Called after we actually act: a raise/shove makes us the aggressor for the rest of the hand. */
-    private function markAggressor(array $view, int $seat, string $action): void
-    {
-        if ($action === 'raise' || $action === 'bet' || $action === 'allin') {
-            $hand = (int) ($view['hand_no'] ?? $view['hand_id'] ?? 0);
-            self::$aggAt[$hand][$seat] = true;
-        }
-    }
-
     private function decideHissNN(HandEngine $engine, int $seat, string $botEngine = 'hiss-nn'): ?array
     {
         $view = $engine->view($seat);
@@ -370,16 +333,7 @@ class BotBrain
         $symLog = $dr['sym'];
         $this->injectOppModel($symLog, $view, $seat);
         $this->injectBettingContext($symLog, $view, $seat);   // pot / stacks / position / real opp count
-        $this->injectAggressor($symLog, $view, $seat);        // WHO HAS THE INITIATIVE [2026-07-14]
         $symLive = env('HISS_OPP_LIVE', false) ? $symLog : $dr['sym'];
-        // The aggressor flag is served ONLY to a net trained with it. The current champion learned on
-        // iamaggressor==0 for every row of its life (the emitter never set it); handing it a suddenly
-        // nonzero value would shove its input out of distribution -- the same class of train/serve
-        // skew that once had a champion folding premium hands. Log it always (so new training rows
-        // carry the truth), serve it only when HISS_AGG_LIVE=1 and the promoted net expects it.
-        if (env('HISS_AGG_LIVE', false)) {
-            $symLive['iamaggressor'] = $symLog['iamaggressor'] ?? 0;
-        }
         // A/B routing: each candidate engine hits its own inference service; everyone else hits
         // the champion. measure_nn scores hiss-nn-chal (PPO) and hiss-nn-cfr (Deep CFR) vs hiss-nn.
         if ($botEngine === 'hiss-nn-cfr') {
@@ -425,9 +379,6 @@ class BotBrain
         // Skip hiss-nn-cfr: the Deep CFR net is trained offline, so its off-policy rows would
         // pollute PPO training (train_ppo.py ingests all hiss_rl rows). It is scored via
         // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
-        // Remember that we took the initiative, so the NEXT decision in this hand knows it is ours.
-        // Without this the flag can never become 1 and the whole fix is inert. [aggressor 2026-07-14]
-        if (is_array($result) && isset($result[0])) $this->markAggressor($view, $seat, (string) $result[0]);
         if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine, (float) ($nn['bet_logp'] ?? 0.0), array_key_exists('bet_logp', $nn));
         return $result;
     }
