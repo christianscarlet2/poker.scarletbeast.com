@@ -334,9 +334,18 @@ class BotBrain
     private static array $aggAt = [];        // hand_id => [seat => true] : we raised here
 
     /** Does the net THIS arm is serving declare that it eats $marker? (per-model, so champion and
-     *  challenger can differ). Cached per request: the A/B routes many decisions through here and a
-     *  stat() per decision on the hot path is waste. A missing dir/marker means "no" -- fail closed,
-     *  because serving a feature to a net that never trained on it is the failure that hurts. */
+     *  challenger can differ). A missing dir/marker means "no" -- fail closed, because serving a
+     *  feature to a net that never trained on it is the failure that hurts.
+     *
+     *  CACHED WITH A TTL, and the TTL is not an optimisation -- it is the correctness fix. These are
+     *  long-running queue workers, so a plain static cache lives for the life of the PROCESS, not the
+     *  request. A worker that once saw "no marker" would keep serving zeros across a PROMOTION -- and
+     *  a promotion is exactly when the markers change (the new champion inherits the challenger's).
+     *  That would hand a freshly-promoted net a contract it never trained on: the precise train/serve
+     *  skew this whole mechanism exists to prevent, reintroduced by the cache in front of it. A short
+     *  TTL keeps the stat() off the hot path while guaranteeing a promotion is picked up in seconds,
+     *  with no restart to remember. [exploit 2026-07-15] */
+    private const EATS_TTL = 30;
     private static array $eatsCache = [];
 
     private function modelEats(string $botEngine, string $marker): bool
@@ -344,11 +353,15 @@ class BotBrain
         $arm = $botEngine === 'hiss-nn-chal' ? 'challenger'
              : ($botEngine === 'hiss-nn-cfr' ? 'cfr' : 'champion');
         $key = $arm . '/' . $marker;
-        if (!array_key_exists($key, self::$eatsCache)) {
+        $now = time();
+        $hit = self::$eatsCache[$key] ?? null;
+        if ($hit === null || ($now - $hit['t']) >= self::EATS_TTL) {
             $base = env('HISS_MODEL_ROOT', '/home/asterisk/hiss-sagemaker/published');
-            self::$eatsCache[$key] = @is_file($base . '/' . $arm . '/' . $marker);
+            clearstatcache(true, $base . '/' . $arm . '/' . $marker);
+            $hit = ['v' => @is_file($base . '/' . $arm . '/' . $marker), 't' => $now];
+            self::$eatsCache[$key] = $hit;
         }
-        return self::$eatsCache[$key];
+        return $hit['v'];
     }
 
     private function injectAggressor(array &$sym, array $view, int $seat): void
