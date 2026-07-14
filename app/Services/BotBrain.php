@@ -100,6 +100,27 @@ class BotBrain
     private function applyGuardrails(array $view, int $seat, array $legal, array $brain): array
     {
         $act = $brain[0] ?? 'check';
+
+        // 0) POT-ODDS FOLD FLOOR. The net decides folds on hand strength and barely reads the price:
+        // measured, it FOLDS ~30% of the time to a 1bb bet into a 44bb pot (44:1) -- the exact live
+        // spot reported. `f$Committed`/PotSize/AmountToCall are all in the contract and the net is only
+        // weakly responsive to them, because a crisp "call when the price is trivial" rule cannot be
+        // learned from a reward with ~62bb of per-hand noise. So the guardrail carries it, like donk
+        // and sizing. If the break-even equity to_call/(pot+to_call) is below the floor (getting better
+        // than ~1:5.7) and the net wants to fold, at least CALL. Asymmetric on purpose: folding a live
+        // hand getting 44:1 is a catastrophe; calling a near-dead one costs a fraction of a bb. This
+        // MUST run before the early-return below -- a fold reaches here as $brain and would otherwise
+        // pass straight through, which is exactly the reported bug. [pot-odds 2026-07-15]
+        if ($act === 'fold' && isset($legal['call'])) {
+            $floor = (float) env('HISS_POTODDS_FLOOR', 0.15);
+            $p0 = $view['players'][$seat] ?? [];
+            $toCall = max(0, (int) ($view['current_bet'] ?? 0) - (int) ($p0['committed_street'] ?? 0));
+            $pot = (int) ($view['pot'] ?? 0);
+            if ($floor > 0 && $toCall > 0 && $pot > 0 && $toCall / ($pot + $toCall) < $floor) {
+                return ['call', 0];
+            }
+        }
+
         if (!in_array($act, ['bet', 'raise'], true)) {
             return $brain;                                   // fold/check/call/draw untouched
         }
