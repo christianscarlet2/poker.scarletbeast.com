@@ -324,9 +324,21 @@ class BotBrain
         $hand = (int) ($view['hand_no'] ?? $view['hand_id'] ?? 0);
         $p = $view['players'][$seat] ?? [];
         $toCall = max(0.0, (float) ($view['current_bet'] ?? 0) - (float) ($p['committed_street'] ?? 0));
-        $raisedHere = !empty(self::$aggAt[$hand][$seat]);
-        // raised earlier AND nothing to call now => still ours. Facing a bet => somebody re-took it.
-        $sym['iamaggressor'] = ($raisedHere && $toCall <= 0.0) ? 1 : 0;
+
+        // LAST RAISER OWNS THE INITIATIVE — matching the Windows C++ engine exactly
+        // (CSymbolEngineHistory: _aggressor_chair carries across streets, overwritten by whoever
+        // raises next, reset only on hand-reset). The two paths MUST agree: a model trained on the
+        // Laravel flag is served the OpenHoldem one on the real tables.
+        //
+        // Facing a bet means somebody raised over us, so the initiative is THEIRS — and it stays
+        // theirs on later streets even though `toCall` goes back to 0 there. Clearing the mark (not
+        // just reporting 0 for this decision) is what encodes that. Without it, we would call a
+        // villain's 3-bet and then wrongly claim to be the aggressor on the flop.
+        if ($toCall > 0.0) {
+            unset(self::$aggAt[$hand][$seat]);
+        }
+        $sym['iamaggressor'] = !empty(self::$aggAt[$hand][$seat]) ? 1 : 0;
+
         if (count(self::$aggAt) > 500) {                     // long-lived queue worker: don't leak
             self::$aggAt = array_slice(self::$aggAt, -100, null, true);
         }
