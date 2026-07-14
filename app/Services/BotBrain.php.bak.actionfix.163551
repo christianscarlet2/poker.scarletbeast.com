@@ -503,89 +503,6 @@ class BotBrain
         $sym['f$Behind_Known'] = $known;
     }
 
-
-    /** The NN's action class -> the concrete table action. Extracted so the SAME mapping can be
-     *  replayed for every action class when computing the behaviour probability of what we played. */
-    private function nnActionToResult(string $a, array $legal, float $betBB, bool $allin, int $bb): ?array
-    {
-        if ($a === 'fold')  return isset($legal['fold']) ? ['fold', 0] : (isset($legal['check']) ? ['check', 0] : null);
-        if ($a === 'check') return isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
-        if ($a === 'call')  return isset($legal['call']) ? ['call', 0] : (isset($legal['check']) ? ['check', 0] : ['fold', 0]);
-        if ($a === 'raise' || $a === 'allin') {
-            if (isset($legal['raise'])) {
-                $to = $allin ? $legal['raise']['max_to'] : (int) round($betBB * $bb);
-                return ['raise', max($legal['raise']['min_to'], min($legal['raise']['max_to'], $to))];
-            }
-            if (isset($legal['bet'])) {
-                $amt = $allin ? $legal['bet']['max'] : (int) round($betBB * $bb);
-                return ['bet', max($legal['bet']['min'], min($legal['bet']['max'], $amt))];
-            }
-            return isset($legal['call']) ? ['call', 0] : ['check', 0];
-        }
-        return isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
-    }
-
-    /** A table action -> one of the net's five classes (fold/check/call/raise/allin).
-     *  A raise/bet that commits the whole stack IS an all-in, and must be labelled as one. */
-    private function playedClass(array $result, array $legal, float $toCall = 0.0): string
-    {
-        $act = (string) ($result[0] ?? 'check');
-        if ($act === 'raise' || $act === 'bet') {
-            $amt = (float) ($result[1] ?? 0);
-            $max = $act === 'raise' ? (float) ($legal['raise']['max_to'] ?? 0) : (float) ($legal['bet']['max'] ?? 0);
-            return ($max > 0 && $amt >= $max - 0.5) ? 'allin' : 'raise';
-        }
-        // THE ENGINE'S OWN COERCION, mirrored. The table records what is LOGICALLY possible, not what
-        // we asked for: folding when nothing is owed is a CHECK, and "checking" while facing a bet is
-        // a CALL. Without mirroring this the log still disagrees with the hand history on ~6% of
-        // decisions -- and every one of those is another row PPO trains on that never happened.
-        if ($act === 'fold'  && $toCall <= 0.0) return 'check';
-        if ($act === 'check' && $toCall >  0.0) return 'call';
-        if ($act === 'call'  && $toCall <= 0.0) return 'check';
-        return $act;
-    }
-
-    /**
-     * THE ACTION-MISMATCH FIX (2026-07-14).
-     *
-     * `applyGuardrails` runs AFTER decideHissNN returns, and it can REWRITE the action: its donk-bet
-     * guard turns a weak out-of-position bet into a check/call/fold, and its sizing rule replaces the
-     * net's chosen bet size with 3-4x pot outright. But we were logging the action the net WANTED,
-     * while the table played something else. The backfill's own alignment check measured it: the
-     * logged action matched the played one on just 74% of decisions.
-     *
-     * So PPO has been training on (state, an action that never happened, its log-prob, a reward
-     * produced by a DIFFERENT action). The policy gradient pushed toward decisions the bot did not
-     * make, credited with outcomes they did not cause -- on roughly a quarter of every training row.
-     *
-     * The honest fix without changing how the bot PLAYS: log what was actually played, and log its
-     * TRUE behaviour probability. The guardrails are a deterministic function of the net's action, so
-     * the probability of the played class is the sum of the net's probabilities over every action
-     * that the guardrails would have mapped ONTO that class. That is the real behaviour policy --
-     * net + guardrails -- and it is exactly what PPO's importance ratio needs.
-     */
-    private function playedActionAndLogp(array $view, int $seat, array $legal, array $result,
-                                         array $probs, float $betBB, bool $allin, int $bb): array
-    {
-        $final = $this->applyGuardrails($view, $seat, $legal, $result);   // idempotent
-        $pp = $view['players'][$seat] ?? [];
-        $toCall = max(0.0, (float) ($view['current_bet'] ?? 0) - (float) ($pp['committed_street'] ?? 0));
-        $cls = $this->playedClass($final, $legal, $toCall);
-
-        $classes = ['fold', 'check', 'call', 'raise', 'allin'];
-        $induced = 0.0;
-        foreach ($classes as $i => $c) {
-            $p = (float) ($probs[$i] ?? 0.0);
-            if ($p <= 0.0) continue;
-            $r = $this->nnActionToResult($c, $legal, $betBB, $allin, $bb);
-            if ($r === null) continue;
-            $f = $this->applyGuardrails($view, $seat, $legal, $r);
-            if ($this->playedClass($f, $legal, $toCall) === $cls) $induced += $p;   // lands on ours
-        }
-        $logp = log(max($induced, 1e-9));
-        return [$final, $cls, $logp];
-    }
-
     private function decideHissNN(HandEngine $engine, int $seat, string $botEngine = 'hiss-nn'): ?array
     {
         $view = $engine->view($seat);
@@ -660,7 +577,23 @@ class BotBrain
         $betBB = (float) ($r['f$betsize'] ?? 0);
         $allin = ((float) ($r['f$allin'] ?? 0)) > 0;
         $bb = max(1, (int) $view['bb']);
-        $result = $this->nnActionToResult($a, $legal, $betBB, $allin, $bb);
+        $result = null;
+        if ($a === 'fold')  $result = isset($legal['fold']) ? ['fold', 0] : (isset($legal['check']) ? ['check', 0] : null);
+        elseif ($a === 'check') $result = isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
+        elseif ($a === 'call')  $result = isset($legal['call']) ? ['call', 0] : (isset($legal['check']) ? ['check', 0] : ['fold', 0]);
+        elseif ($a === 'raise' || $a === 'allin') {
+            if (isset($legal['raise'])) {
+                $to = $allin ? $legal['raise']['max_to'] : (int) round($betBB * $bb);
+                $result = ['raise', max($legal['raise']['min_to'], min($legal['raise']['max_to'], $to))];
+            } elseif (isset($legal['bet'])) {
+                $amt = $allin ? $legal['bet']['max'] : (int) round($betBB * $bb);
+                $result = ['bet', max($legal['bet']['min'], min($legal['bet']['max'], $amt))];
+            } else {
+                $result = isset($legal['call']) ? ['call', 0] : ['check', 0];
+            }
+        } else {
+            $result = isset($legal['check']) ? ['check', 0] : (isset($legal['call']) ? ['call', 0] : ['fold', 0]);
+        }
         if ($result === null) return null;
         // On-policy RL telemetry: log the NN's OWN sampled decision (+ behavior logp) to hiss_rl
         // for PPO. Only when the NN actually decided (not the OHF fallback). reward backfilled.
@@ -669,11 +602,8 @@ class BotBrain
         // measure_nn (hands table + bot_engine), which needs no hiss_rl emit.
         // Remember that we took the initiative, so the NEXT decision in this hand knows it is ours.
         // Without this the flag can never become 1 and the whole fix is inert. [aggressor 2026-07-14]
-        // What the table will ACTUALLY play (guardrails included), and its true behaviour probability.
-        [$played, $playedCls, $playedLogp] = $this->playedActionAndLogp(
-            $view, $seat, $legal, $result, (array) ($nn['probs'] ?? []), $betBB, $allin, $bb);
-        if (is_array($played) && isset($played[0])) $this->markAggressor($view, $seat, (string) $played[0]);
-        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $playedCls, $played, $playedLogp, $botEngine, (float) ($nn['bet_logp'] ?? 0.0), array_key_exists('bet_logp', $nn));
+        if (is_array($result) && isset($result[0])) $this->markAggressor($view, $seat, (string) $result[0]);
+        if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $a, $result, (float) ($nn['logp'] ?? 0.0), $botEngine, (float) ($nn['bet_logp'] ?? 0.0), array_key_exists('bet_logp', $nn));
         return $result;
     }
 
