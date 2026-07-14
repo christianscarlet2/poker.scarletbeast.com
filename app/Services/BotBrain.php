@@ -655,12 +655,20 @@ class BotBrain
         if (env('HISS_AGG_LIVE', false) || $this->modelEats($botEngine, 'AGG_TRAINED')) {
             $symLive['iamaggressor'] = $symLog['iamaggressor'] ?? 0;
         }
-        // Same bargain for the EXPLOIT/STEAL/BEHIND block: hiss_rl.sym carries it from today (so the
-        // next net trains on it), the live net is served it only once it has trained on it. NOTE the
-        // STRIP branch is not belt-and-braces: HISS_OPP_LIVE=1 today, so $symLive IS $symLog and the
-        // new keys would otherwise ride into the live sym for free -- exactly the train/serve skew the
-        // flag exists to prevent. Mirrors: features_lean2.py, backfill_exploit.py, arena6.py.
-        if (env('HISS_EXPLOIT_LIVE', false)) {
+        // Same bargain for the EXPLOIT/STEAL/BEHIND block, and now driven by the MODEL, not a global env.
+        //
+        // This exact strip is what blocked the first promotion of the fixed bet head. The challenger had
+        // LEARNED from 19 of these inputs; we were still stripping them; so live it played with a fifth
+        // of its features zeroed and scored -306 bb/100 paired against the champion while the arena --
+        // which feeds them -- said +16. The gate's guard caught it and refused to promote. Correctly.
+        //
+        // The documented fix was HISS_EXPLOIT_LIVE=1. But a GLOBAL flag cannot be right for a 63-dim
+        // champion and an 83-dim challenger at the same time, and an A/B is exactly two models with
+        // different contracts running side by side: switching it on would have un-skewed the challenger
+        // by skewing the champion. So each arm is served the contract IT trained on -- train_ppo stamps
+        // EXPLOIT_TRAINED, promotion carries the marker with the weights, and we read the marker of the
+        // arm we are serving. The env still forces it on. [exploit 2026-07-14]
+        if (env('HISS_EXPLOIT_LIVE', false) || $this->modelEats($botEngine, 'EXPLOIT_TRAINED')) {
             foreach (self::EXPLOIT_KEYS as $k) {
                 if (array_key_exists($k, $symLog)) $symLive[$k] = $symLog[$k];
             }
