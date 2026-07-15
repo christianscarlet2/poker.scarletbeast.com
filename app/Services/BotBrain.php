@@ -369,10 +369,19 @@ class BotBrain
     private const EATS_TTL = 30;
     private static array $eatsCache = [];
 
-    private function modelEats(string $botEngine, string $marker): bool
+    /** Which published/ subdir is this engine actually served from? Archetype routing overrides it
+     *  (a maniac is served from published/specialist_maniac), so the marker lookup and the feature
+     *  serving must key off the DIR, not the engine name -- else a specialist gets fed a contract it
+     *  never trained on, the exact skew the markers exist to prevent. [maniac routing 2026-07-15] */
+    private function armDirFor(string $botEngine): string
     {
-        $arm = $botEngine === 'hiss-nn-chal' ? 'challenger'
+        return $botEngine === 'hiss-nn-chal' ? 'challenger'
              : ($botEngine === 'hiss-nn-cfr' ? 'cfr' : 'champion');
+    }
+
+    private function modelEats(string $armDir, string $marker): bool
+    {
+        $arm = $armDir;
         $key = $arm . '/' . $marker;
         $now = time();
         $hit = self::$eatsCache[$key] ?? null;
@@ -669,6 +678,24 @@ class BotBrain
         $this->injectBettingContext($symLog, $view, $seat);   // pot / stacks / position / real opp count
         $this->injectAggressor($symLog, $view, $seat);        // WHO HAS THE INITIATIVE [2026-07-14]
         $this->injectStealContext($symLog, $view, $seat);     // STEAL SPOT + THE PLAYERS BEHIND [exploit 2026-07-14]
+
+        // ---- ARCHETYPE ROUTING: a known MANIAC is served by a dedicated best-response, not the champion.
+        // Measured: 15% of live decisions face a maniac, and specialist_maniac beats the champion against
+        // aggressive villains by +135..+277 bb/100 across the whole aggression/size spectrum (not overfit
+        // to one bot). The other archetypes are too rare live to matter (77% of villains fit NO clean
+        // type and stay on the champion, the only policy validated on the broad field). So: ONE extra
+        // model, one route. Only the CHAMPION arm is rerouted -- the A/B arms keep their own models so
+        // the promotion gate stays clean. Uses f$Opp_IsManiac, the SAME classifier oppFeatures already
+        // computes, so serve-time routing matches the arena's. [maniac routing 2026-07-15]
+        $armDir = $this->armDirFor($botEngine);
+        $nnUrl = $botEngine === 'hiss-nn-cfr'  ? env('HISS_NN_CFR_URL',  'http://127.0.0.1:8095/nn-decide')
+               : ($botEngine === 'hiss-nn-chal' ? env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide')
+               :                                  env('HISS_NN_URL',      'http://127.0.0.1:8088/nn-decide'));
+        if ($armDir === 'champion' && env('HISS_ROUTE_MANIAC', true) && (($symLog['f$Opp_IsManiac'] ?? 0) > 0)) {
+            $armDir = 'specialist_maniac';
+            $nnUrl  = env('HISS_NN_MANIAC_URL', 'http://127.0.0.1:8096/nn-decide');
+        }
+
         $symLive = env('HISS_OPP_LIVE', false) ? $symLog : $dr['sym'];
         // The aggressor flag is served ONLY to a net that TRAINED on it -- and which net that is now
         // depends on the arm, so the model itself has to say so.
@@ -686,7 +713,7 @@ class BotBrain
         // weights, and we read the marker of the arm we are actually serving. Nothing to remember to
         // flip, and the champion and challenger may disagree. HISS_AGG_LIVE=1 still forces it on.
         // [aggressor 2026-07-14]
-        if (env('HISS_AGG_LIVE', false) || $this->modelEats($botEngine, 'AGG_TRAINED')) {
+        if (env('HISS_AGG_LIVE', false) || $this->modelEats($armDir, 'AGG_TRAINED')) {
             $symLive['iamaggressor'] = $symLog['iamaggressor'] ?? 0;
         }
         // Same bargain for the EXPLOIT/STEAL/BEHIND block, and now driven by the MODEL, not a global env.
@@ -702,22 +729,14 @@ class BotBrain
         // by skewing the champion. So each arm is served the contract IT trained on -- train_ppo stamps
         // EXPLOIT_TRAINED, promotion carries the marker with the weights, and we read the marker of the
         // arm we are serving. The env still forces it on. [exploit 2026-07-14]
-        if (env('HISS_EXPLOIT_LIVE', false) || $this->modelEats($botEngine, 'EXPLOIT_TRAINED')) {
+        if (env('HISS_EXPLOIT_LIVE', false) || $this->modelEats($armDir, 'EXPLOIT_TRAINED')) {
             foreach (self::EXPLOIT_KEYS as $k) {
                 if (array_key_exists($k, $symLog)) $symLive[$k] = $symLog[$k];
             }
         } else {
             foreach (self::EXPLOIT_KEYS as $k) { unset($symLive[$k]); }
         }
-        // A/B routing: each candidate engine hits its own inference service; everyone else hits
-        // the champion. measure_nn scores hiss-nn-chal (PPO) and hiss-nn-cfr (Deep CFR) vs hiss-nn.
-        if ($botEngine === 'hiss-nn-cfr') {
-            $nnUrl = env('HISS_NN_CFR_URL', 'http://127.0.0.1:8095/nn-decide');
-        } elseif ($botEngine === 'hiss-nn-chal') {
-            $nnUrl = env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide');
-        } else {
-            $nnUrl = env('HISS_NN_URL', 'http://127.0.0.1:8088/nn-decide');
-        }
+        // ($nnUrl was selected above, with the archetype-routing override applied.)
         // Betting context for the CFR bridge (the sparse sym omits it): real pot / to-call / stack
         // so the net can reconstruct a facing-bet state and size bets correctly (not min-raise).
         $nn = $this->postJson($nnUrl,
