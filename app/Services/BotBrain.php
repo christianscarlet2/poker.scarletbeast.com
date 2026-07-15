@@ -468,6 +468,43 @@ class BotBrain
         }
     }
 
+    // STREET MEMORY -- the vocabulary to trap. Per (hand, street) per seat: did it already check /
+    // already bet this street. Same static-map pattern as $aggAt, but keyed by street (a flop check
+    // must not carry to the turn). Populated AFTER each decision, read BEFORE the next. [trap 2026-07-15]
+    private static array $streetActs = [];        // "hand|street" => [seat => ['checked'=>bool,'bet'=>bool]]
+
+    private function streetKey(array $view): string
+    {
+        $hand = (int) ($view['hand_no'] ?? $view['hand_id'] ?? 0);
+        $street = is_array($view['board'] ?? null) ? count($view['board']) : 0;   // 0/3/4/5
+        return $hand . '|' . $street;
+    }
+
+    private function injectStreetMemory(array &$sym, array $view, int $seat): void
+    {
+        $k = $this->streetKey($view);
+        $st = self::$streetActs[$k][$seat] ?? ['checked' => false, 'bet' => false];
+        $p = $view['players'][$seat] ?? [];
+        $toCall = max(0, (int) ($view['current_bet'] ?? 0) - (int) ($p['committed_street'] ?? 0));
+        $sym['f$ICheckedStreet'] = $st['checked'] ? 1 : 0;
+        $sym['f$IBetStreet']     = $st['bet'] ? 1 : 0;
+        $sym['f$CheckRaiseSpot'] = ($st['checked'] && $toCall > 0) ? 1 : 0;
+        if (count(self::$streetActs) > 2000) {                 // long-lived worker: bound the map
+            self::$streetActs = array_slice(self::$streetActs, -400, null, true);
+        }
+    }
+
+    private function markStreetAction(array $view, int $seat, string $action): void
+    {
+        $k = $this->streetKey($view);
+        self::$streetActs[$k][$seat] = self::$streetActs[$k][$seat] ?? ['checked' => false, 'bet' => false];
+        if ($action === 'check') {
+            self::$streetActs[$k][$seat]['checked'] = true;
+        } elseif ($action === 'bet' || $action === 'raise' || $action === 'allin') {
+            self::$streetActs[$k][$seat]['bet'] = true;
+        }
+    }
+
     /** Every key the EXPLOIT rollout adds to the sym. Logged always; served only behind
      *  HISS_EXPLOIT_LIVE. Mirrors features_lean2.py's EXPLOIT + STEAL + BEHIND lists. */
     private const EXPLOIT_KEYS = [
@@ -718,6 +755,7 @@ class BotBrain
         $this->injectBettingContext($symLog, $view, $seat);   // pot / stacks / position / real opp count
         $this->injectAggressor($symLog, $view, $seat);        // WHO HAS THE INITIATIVE [2026-07-14]
         $this->injectStealContext($symLog, $view, $seat);     // STEAL SPOT + THE PLAYERS BEHIND [exploit 2026-07-14]
+        $this->injectStreetMemory($symLog, $view, $seat);     // DID I CHECK / BET THIS STREET [trap 2026-07-15]
 
         // ---- ARCHETYPE ROUTING: a known MANIAC is served by a dedicated best-response, not the champion.
         // Measured: 15% of live decisions face a maniac, and specialist_maniac beats the champion against
@@ -797,6 +835,17 @@ class BotBrain
         } else {
             foreach (self::EXPLOIT_KEYS as $k) { unset($symLive[$k]); }
         }
+        // STREET MEMORY: same per-model bargain. Logged always (so new training rows carry it), served
+        // only to a net that stamped TRAP_TRAINED. Dormant until a trap-trained net is promoted -- and
+        // it will only LEARN to use it where trapping pays, i.e. a tight/online field, not the calling
+        // self-play bots (trap_ev.py: fast-play +88.8 vs check-raise +76.5 here). [trap 2026-07-15]
+        foreach (['f$ICheckedStreet', 'f$IBetStreet', 'f$CheckRaiseSpot'] as $k) {
+            if (env('HISS_TRAP_LIVE', false) || $this->modelEats($armDir, 'TRAP_TRAINED')) {
+                if (array_key_exists($k, $symLog)) $symLive[$k] = $symLog[$k];
+            } else {
+                unset($symLive[$k]);
+            }
+        }
         // ($nnUrl was selected above, with the archetype-routing override applied.)
         // Betting context for the CFR bridge (the sparse sym omits it): real pot / to-call / stack
         // so the net can reconstruct a facing-bet state and size bets correctly (not min-raise).
@@ -823,7 +872,10 @@ class BotBrain
         // What the table will ACTUALLY play (guardrails included), and its true behaviour probability.
         [$played, $playedCls, $playedLogp] = $this->playedActionAndLogp(
             $view, $seat, $legal, $result, (array) ($nn['probs'] ?? []), $betBB, $allin, $bb);
-        if (is_array($played) && isset($played[0])) $this->markAggressor($view, $seat, (string) $played[0]);
+        if (is_array($played) && isset($played[0])) {
+            $this->markAggressor($view, $seat, (string) $played[0]);
+            $this->markStreetAction($view, $seat, (string) $played[0]);   // street memory [trap 2026-07-15]
+        }
         if ($usedNN && $botEngine !== 'hiss-nn-cfr') $this->emitHissNN($view, $seat, $symLog, $hole, $board, $playedCls, $played, $playedLogp, $botEngine, (float) ($nn['bet_logp'] ?? 0.0), array_key_exists('bet_logp', $nn));
         return $result;
     }
@@ -929,7 +981,14 @@ class BotBrain
             // mirroring collect.py's (hand_id, board, hole) key. Bounded for the long-lived bot.
             static $seen = [];
             $spot = $handId . '|' . $board . '|' . $hole;
-            if (isset($seen[$spot])) return;
+            // The dedup keeps the FIRST decision per (hand, board) -- which is the first action on the
+            // street. That silently throws away every SECOND action: exactly the check-raise and the
+            // barrel, i.e. the decisions the street-memory feature exists to teach. So the streetmem
+            // block was always ~0 in training. Exception: never dedup a CHECK-RAISE decision (checked
+            // earlier this street, now facing a bet), so those rows actually reach training. Everything
+            // else dedups as before. [trap 2026-07-15]
+            $isCheckRaise = is_array($sym) && (float) ($sym['f$CheckRaiseSpot'] ?? 0) > 0;
+            if (isset($seen[$spot]) && !$isCheckRaise) return;
             if (count($seen) > 20000) $seen = [];
             $seen[$spot] = true;
             $symJson = is_array($sym) ? json_encode($sym) : (is_string($sym) ? $sym : '{}');
