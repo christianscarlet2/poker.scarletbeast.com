@@ -379,6 +379,46 @@ class BotBrain
              : ($botEngine === 'hiss-nn-cfr' ? 'cfr' : 'champion');
     }
 
+    /** Classify a villain into a routing bucket from its measured HUD stats. Mirror of route_lib.py's
+     *  route_for(); keep in sync. Returns one of the specialist keys, or null = no clean read / no
+     *  specialist better than the champion (nit) -> stay on the champion. Archetype flags are gated on
+     *  a real sample (Known), so an unread villain always returns null. [six-way routing 2026-07-15] */
+    private function routeArchetype(array $s): ?string
+    {
+        if (($s['f$Opp_Known'] ?? 0) <= 0) return null;         // <20 hands: no read, base policy
+        $vpip = (float) ($s['f$Opp_VPIP'] ?? 0);
+        $pfr  = (float) ($s['f$Opp_PFR'] ?? 0);
+        $af   = (float) ($s['f$Opp_AF'] ?? 0);
+        if ($vpip < 15)                                   return null;      // nit: specialist is worse -> champion
+        if ($vpip > 45 && $af > 3.5)                      return 'maniac';
+        if ($vpip > 55 && $pfr < 6)                       return 'callbot';  // ultra loose-passive; MORE specific than station, so first
+        if ($vpip > 30 && $pfr < 12 && $af < 1.2)         return 'station';
+        if ($vpip >= 15 && $vpip <= 28 && $pfr >= $vpip * 0.55 && $af >= 1.3) return 'tag';
+        // The catch-all stays on the CHAMPION, NOT specialist_random. That specialist was trained vs a
+        // uniformly-random bot -- nothing like the mid-VPIP villains that actually land here -- and was
+        // never validated against them. The champion is the only policy proven on the broad field.
+        // Routing the catch-all needs its own canary first. [six-way routing 2026-07-15]
+        return null;
+    }
+
+    /** archetype -> [published subdir, inference url]. Only archetypes whose specialist BEAT the
+     *  champion in the arena are here; everything else falls back to the champion. */
+    private function specialistRoute(string $arch): ?array
+    {
+        static $map = null;
+        if ($map === null) {
+            $map = [
+                'maniac'  => ['specialist_maniac',  env('HISS_NN_MANIAC_URL',  'http://127.0.0.1:8096/nn-decide')],
+                'tag'     => ['specialist_tag',     env('HISS_NN_TAG_URL',     'http://127.0.0.1:8097/nn-decide')],
+                'station' => ['specialist_station', env('HISS_NN_STATION_URL', 'http://127.0.0.1:8098/nn-decide')],
+                'callbot' => ['specialist_callbot', env('HISS_NN_CALLBOT_URL', 'http://127.0.0.1:8100/nn-decide')],
+                // specialist_random intentionally omitted -- the catch-all stays on the champion until a
+                // canary validates specialist_random against the REAL mid-field (not the synthetic random bot).
+            ];
+        }
+        return $map[$arch] ?? null;
+    }
+
     private function modelEats(string $armDir, string $marker): bool
     {
         $arm = $armDir;
@@ -691,9 +731,30 @@ class BotBrain
         $nnUrl = $botEngine === 'hiss-nn-cfr'  ? env('HISS_NN_CFR_URL',  'http://127.0.0.1:8095/nn-decide')
                : ($botEngine === 'hiss-nn-chal' ? env('HISS_NN_CHAL_URL', 'http://127.0.0.1:8091/nn-decide')
                :                                  env('HISS_NN_URL',      'http://127.0.0.1:8088/nn-decide'));
-        if ($armDir === 'champion' && env('HISS_ROUTE_MANIAC', true) && (($symLog['f$Opp_IsManiac'] ?? 0) > 0)) {
-            $armDir = 'specialist_maniac';
-            $nnUrl  = env('HISS_NN_MANIAC_URL', 'http://127.0.0.1:8096/nn-decide');
+        // SIX-WAY ARCHETYPE ROUTING (champion arm only, so the A/B stays clean). On the self-play field
+        // 77% of villains fit no clean type and stay on the champion -- but ONLINE, real opponents DO
+        // fit archetypes, which is what this is for. Each specialist beat the champion in the arena
+        // (+47..+262) and generalises across its type's spectrum.
+        if ($armDir === 'champion' && env('HISS_ROUTE_ARCHETYPE', true)) {
+            $arch = $this->routeArchetype($symLog);
+            $spec = $arch !== null ? $this->specialistRoute($arch) : null;
+            if ($spec !== null) {
+                // CANARY (maniac only, the highest-volume archetype in self-play): with HISS_MANIAC_CANARY
+                // on, route only HALF the maniac hands (by per-hand hash) and hold the rest on the
+                // champion, so reward_bb grouped by the `_route` stamp is a clean paired-ish live
+                // measurement -- the one thing the arena cannot give us. Other archetypes route fully
+                // (too rare in self-play to split usefully; the arena strongly validated them).
+                $split = ($arch === 'maniac') && env('HISS_MANIAC_CANARY', false);
+                $treat = !$split
+                      || (crc32(($view['table_id'] ?? 0) . '-' . ($view['hand_no'] ?? 0)) % 2 === 0);
+                if ($treat) {
+                    $armDir = $spec[0];
+                    $nnUrl  = $spec[1];
+                }
+                // stamped onto the LOGGED sym only (emitHissNN gets $symLog); vectorize ignores unknown
+                // keys, so it never touches training or serving -- pure measurement telemetry.
+                $symLog['_route'] = $treat ? $arch : ($arch . '_control');
+            }
         }
 
         $symLive = env('HISS_OPP_LIVE', false) ? $symLog : $dr['sym'];
